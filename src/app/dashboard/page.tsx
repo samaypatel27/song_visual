@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 interface Playlist {
     id: string;
@@ -56,7 +57,12 @@ export default function DashboardPage() {
                 <ul style={styles.grid}>
                     {playlists.map((pl) => (
                         <li key={pl.id} style={styles.card}>
-                            {pl.name}
+                            <Link
+                                href={`/playlist/${pl.id}`}
+                                style={{ display: "block", color: "inherit", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                            >
+                                {pl.name}
+                            </Link>
                         </li>
                     ))}
                     {playlists.length === 0 && (
