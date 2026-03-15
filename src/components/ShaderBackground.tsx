@@ -189,12 +189,12 @@ export function ShaderBackground() {
     scene.add(new THREE.Mesh(geometry, material));
 
     // ── Animation loop ──────────────────────────────────────────────────────
-    const clock = new THREE.Clock();
+    const startMs = performance.now(); // replaces THREE.Clock (deprecated)
     let animId: number;
 
     const tick = () => {
       animId = requestAnimationFrame(tick);
-      uniforms.u_time.value = clock.getElapsedTime();
+      uniforms.u_time.value = (performance.now() - startMs) / 1000; // seconds
       renderer.render(scene, camera);
     };
     tick();
