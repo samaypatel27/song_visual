@@ -1,3 +1,5 @@
+// NOTE: Any time scopes are changed, users must re-authenticate.
+// Existing tokens will NOT gain new scopes retroactively.
 import type { NextAuthOptions } from "next-auth";
 import SpotifyProvider from "next-auth/providers/spotify";
 import type { JWT } from "next-auth/jwt";
