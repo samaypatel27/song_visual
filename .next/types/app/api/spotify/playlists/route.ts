@@ -1,4 +1,4 @@
-// File: C:\coding\song_visual\src\app\api\spotify\playlists\route.ts
+// File: C:\Users\sudhi\Documents\Coding Projects\song_visual\src\app\api\spotify\playlists\route.ts
 import * as entry from '../../../../../../src/app/api/spotify/playlists/route.js'
 import type { NextRequest } from 'next/server.js'
 

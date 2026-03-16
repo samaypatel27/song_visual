@@ -8,16 +8,14 @@ import type { Group } from "three";
 export interface VinylRecordProps {
     albumCoverUrl: string;
     position: [number, number, number];
-    yRotation: number;
-    index: number;
     radius: number; // dynamic — set by VinylScene based on track count
 }
 
 // ── Animation speeds ───────────────────────────────────────────────────────
-const IDLE_SPEED = (Math.PI * 2) / 15;
-const HOVER_SPEED = (Math.PI * 2) / 1.5;
+const IDLE_SPEED = (Math.PI * 2) / 30;   // 1 full rotation per 30 s
+const HOVER_SPEED = (Math.PI * 2) / 2;   // 1 full rotation per 2 s on hover
 
-export function VinylRecord({ albumCoverUrl, position, yRotation, index, radius }: VinylRecordProps) {
+export function VinylRecord({ albumCoverUrl, position, radius }: VinylRecordProps) {
 
     // ── All geometry sizes derived from `radius` prop ──────────────────────────
     const HALF_H = 0.055 / 2;
@@ -33,8 +31,6 @@ export function VinylRecord({ albumCoverUrl, position, yRotation, index, radius 
 
     // ── Refs ────────────────────────────────────────────────────────────────
     const groupRef = useRef<Group>(null);
-    const basePosition = useRef<[number, number, number]>(position);
-    const baseYRotation = useRef(yRotation);
     const isHovered = useRef(false);
     const currentSpinSpeed = useRef(IDLE_SPEED);
     const spinAngle = useRef(0);
@@ -66,19 +62,13 @@ export function VinylRecord({ albumCoverUrl, position, yRotation, index, radius 
         return () => { tex.dispose(); setAlbumTexture(null); };
     }, [albumCoverUrl]);
 
-    // ── Animation ────────────────────────────────────────────────────────────
-    useFrame(({ clock }, delta) => {
+    // ── Animation — face-on Z-axis spin (record spinning in place on wall) ───
+    useFrame(({}, delta) => {
         if (!groupRef.current) return;
-        const t = clock.elapsedTime;
-        const phase = index * 1.618;
-
         const targetSpeed = isHovered.current ? HOVER_SPEED : IDLE_SPEED;
         currentSpinSpeed.current = THREE.MathUtils.lerp(currentSpinSpeed.current, targetSpeed, 0.06);
         spinAngle.current += currentSpinSpeed.current * delta;
-
-        groupRef.current.rotation.y = baseYRotation.current + spinAngle.current;
-        groupRef.current.position.y = basePosition.current[1] + Math.sin(t * ((Math.PI * 2) / 4) + phase) * 0.12;
-        groupRef.current.rotation.x = Math.sin(t * ((Math.PI * 2) / 6) + phase + 1.3) * 0.052;
+        groupRef.current.rotation.z = spinAngle.current;
     });
 
     // ── Pointer ───────────────────────────────────────────────────────────────
@@ -86,7 +76,7 @@ export function VinylRecord({ albumCoverUrl, position, yRotation, index, radius 
     const onPointerOut = () => { isHovered.current = false; document.body.style.cursor = "default"; };
 
     return (
-        <group ref={groupRef} position={position} rotation={[0, yRotation, 0]}>
+        <group ref={groupRef} position={position}>
 
             {/* ── MAIN VINYL CYLINDER ──────────────────────────────────────────── */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} onPointerOver={onPointerOver} onPointerOut={onPointerOut}>
