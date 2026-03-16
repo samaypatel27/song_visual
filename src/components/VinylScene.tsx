@@ -74,7 +74,7 @@ const generatePositions = (
     const progress = n <= 1 ? 0.5 : i / (n - 1);
 
     // Placement zone grows from center outward as discs get smaller.
-    // Largest disc: ±5x, ±3y   →   smallest disc: ±13x, ±7.2y
+    // Largest disc: ±5x, ±3y → smallest disc: ±13x, ±7.2y
     const xRange = 5 + progress * 8;
     const yRange = 3 + progress * 4.2;
 
@@ -104,16 +104,33 @@ const generatePositions = (
     }
 
     if (!placed) {
-      // Fallback: spiral outward from center to guarantee all discs appear
-      const angle = i * 2.399; // golden angle in radians
-      const spread = r * 3 + i * (r * 0.6);
-      const fx = Math.cos(angle) * spread;
-      const fy = Math.sin(angle) * spread;
-      positions.push([fx, fy, 0]);
-      radii.push(r);
-      console.warn(
-        `[VinylScene] "${group.albumName}" fallback spiral placement`,
-      );
+      // Fallback: overlap-aware spiral — expand outward until a clear spot is found
+      const baseAngle = i * 2.399; // golden angle keeps starting directions spread out
+      let spiralDist = r * 2;
+      outer: while (spiralDist < 80) {
+        for (let a = 0; a < Math.PI * 2; a += 0.25) {
+          const fx = Math.cos(baseAngle + a) * spiralDist;
+          const fy = Math.sin(baseAngle + a) * spiralDist;
+          const tooClose = positions.some((pos, j) => {
+            const dx = pos[0] - fx;
+            const dy = pos[1] - fy;
+            return Math.sqrt(dx * dx + dy * dy) < radii[j] + r + 0.5;
+          });
+          if (!tooClose) {
+            positions.push([fx, fy, 0]);
+            radii.push(r);
+            placed = true;
+            break outer;
+          }
+        }
+        spiralDist += r * 0.8;
+      }
+      if (!placed) {
+        // Absolute last resort — push far out, accept potential overlap
+        positions.push([Math.cos(i * 2.399) * 80, Math.sin(i * 2.399) * 80, 0]);
+        radii.push(r);
+        console.warn(`[VinylScene] "${group.albumName}" could not be placed without overlap`);
+      }
     }
   });
 
