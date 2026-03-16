@@ -23,6 +23,7 @@ interface SpotifyPlaylistItem {
 interface SpotifyItemsPage {
     items: SpotifyPlaylistItem[];
     next: string | null;
+    total: number;
 }
 
 export interface TrackData {
@@ -40,72 +41,47 @@ export async function GET(
     const session = await getServerSession(authOptions);
     const { id } = await params;
 
-    console.log("[playlist-tracks] route hit, id:", id);
-    console.log("[playlist-tracks] accessToken present:", !!session?.accessToken, "| prefix:", session?.accessToken?.slice(0, 12) ?? "MISSING");
-
     if (!session?.accessToken) {
-        console.log("[playlist-tracks] 401 — no access token in session");
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Pre-check: confirm token is alive
-    const meRes = await fetch("https://api.spotify.com/v1/me", {
-        headers: { Authorization: `Bearer ${session.accessToken}` },
-    });
-    console.log("[playlist-tracks] /me status:", meRes.status);
-    if (!meRes.ok) {
-        const meBody = await meRes.json().catch(() => ({}));
-        console.log("[playlist-tracks] token expired or invalid:", JSON.stringify(meBody));
-        return NextResponse.json({ error: "Token invalid — please re-authenticate", detail: meBody }, { status: meRes.status });
+    const headers = { Authorization: `Bearer ${session.accessToken}` };
+    const limit = 50;
+
+    // Fetch first page to get total count 
+    const firstUrl = `https://api.spotify.com/v1/playlists/${id}/items?limit=${limit}&offset=0`;
+    const firstRes = await fetch(firstUrl, { headers });
+
+    if (!firstRes.ok) {
+        const raw = await firstRes.json().catch(() => ({}));
+        return NextResponse.json({ error: "Spotify API error", status: firstRes.status, detail: raw }, { status: firstRes.status });
     }
 
-    // ── Pagination loop ─────────────────────────────────────────────────────
-    let allItems: SpotifyPlaylistItem[] = [];
-    let offset = 0;
-    const limit = 50; // Feb 2026 API max is 50 (was 100 on /tracks endpoint)
+    const firstPage = (await firstRes.json()) as SpotifyItemsPage;
+    let allItems: SpotifyPlaylistItem[] = [...(firstPage.items ?? [])];
 
-    while (true) {
-        const pageUrl = `https://api.spotify.com/v1/playlists/${id}/items?limit=${limit}&offset=${offset}`;
-        console.log(`[playlist-tracks] fetching offset ${offset}:`, pageUrl.split("?")[0]);
+    // Fetch remaining pages in parallel 
+    if (firstPage.next && firstPage.total > limit) {
+        const remainingPages = Math.ceil((firstPage.total - limit) / limit);
+        const offsets = Array.from({ length: remainingPages }, (_, i) => (i + 1) * limit);
 
-        const res = await fetch(pageUrl, {
-            headers: { Authorization: `Bearer ${session.accessToken}` },
-        });
+        const pages = await Promise.all(
+            offsets.map(async (offset) => {
+                const url = `https://api.spotify.com/v1/playlists/${id}/items?limit=${limit}&offset=${offset}`;
+                const res = await fetch(url, { headers });
+                if (!res.ok) return { items: [], next: null, total: 0 };
+                return res.json() as Promise<SpotifyItemsPage>;
+            })
+        );
 
-        console.log("[playlist-tracks] Spotify response status:", res.status);
-
-        if (!res.ok) {
-            const raw = await res.json().catch(() => ({}));
-            console.log("[playlist-tracks] Spotify error body:", JSON.stringify(raw));
-            return NextResponse.json({ error: "Spotify API error", status: res.status, detail: raw }, { status: res.status });
+        for (const page of pages) {
+            allItems = allItems.concat(page.items ?? []);
         }
-
-        const page = (await res.json()) as SpotifyItemsPage;
-        const pageItems = page.items ?? [];
-
-        console.log(`[playlist-tracks] page at offset ${offset}: ${pageItems.length} items, next: ${!!page.next}`);
-
-        // Diagnose the raw shape of the first 3 items on the first page
-        if (offset === 0) {
-            pageItems.slice(0, 3).forEach((pi, i) => {
-                console.log(`[playlist-tracks] raw item[${i}]:`, JSON.stringify({
-                    hasItem: !!pi.item,
-                    hasTrack: !!pi.track,
-                    itemType: pi.item?.type ?? "null",
-                    itemName: pi.item?.name ?? "null",
-                    albumImages: pi.item?.album?.images?.length ?? "no album",
-                }));
-            });
-        }
-
-        allItems = allItems.concat(pageItems);
-        if (!page.next || pageItems.length === 0) break;
-        offset += limit;
     }
 
     console.log("[playlist-tracks] total items from Spotify:", allItems.length);
 
-    // ── Map items → TrackData ───────────────────────────────────────────────
+    // Map items → TrackData 
     let validCover = 0;
     let missingCover = 0;
     let skippedNull = 0;

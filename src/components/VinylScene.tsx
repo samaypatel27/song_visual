@@ -228,6 +228,7 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
         pointerEvents: "auto",
       }}
       gl={{ alpha: true, antialias: true }}
+      dpr={[1, 2]}
       camera={{ fov: 70, position: [0, 0, 22], near: 0.1, far: 200 }}
     >
       {/* Lighting */}

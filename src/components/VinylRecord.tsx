@@ -80,7 +80,7 @@ export function VinylRecord({ albumCoverUrl, position, radius }: VinylRecordProp
 
             {/* ── MAIN VINYL CYLINDER ──────────────────────────────────────────── */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} onPointerOver={onPointerOver} onPointerOut={onPointerOut}>
-                <cylinderGeometry args={[radius, radius, 0.055, 128]} />
+                <cylinderGeometry args={[radius, radius, 0.055, 64]} />
                 <meshStandardMaterial color="#0a0a0a" roughness={0.18} metalness={0.75} />
             </mesh>
 
@@ -88,7 +88,7 @@ export function VinylRecord({ albumCoverUrl, position, radius }: VinylRecordProp
 
             {/* Art disc — key forces material remount when texture UUID changes */}
             <mesh position={[0, 0, ART_Z]} rotation={[-Math.PI / 2, 0, 0]} onPointerOver={onPointerOver} onPointerOut={onPointerOut}>
-                <cylinderGeometry args={[ART_R, ART_R, 0.002, 128]} />
+                <cylinderGeometry args={[ART_R, ART_R, 0.002, 64]} />
                 <meshStandardMaterial
                     key={albumTexture?.uuid ?? "art-front-loading"}
                     map={albumTexture ?? undefined}
@@ -98,58 +98,28 @@ export function VinylRecord({ albumCoverUrl, position, radius }: VinylRecordProp
                 />
             </mesh>
 
-            {/* Groove rings — 8 semi-transparent concentric rings over art */}
+            {/* Groove rings — meshBasicMaterial skips lighting calc entirely */}
             {GROOVE_RADII.map((r, i) => (
                 <mesh key={`gf-${i}`} position={[0, 0, DETAIL_Z]}>
-                    <torusGeometry args={[r, radius * 0.005, 6, 128]} />
-                    <meshStandardMaterial color="#000000" opacity={0.18} transparent roughness={0.1} metalness={0.95} />
+                    <torusGeometry args={[r, radius * 0.005, 6, 64]} />
+                    <meshBasicMaterial color="#000000" opacity={0.18} transparent />
                 </mesh>
             ))}
 
             {/* Iridescent shimmer ring */}
             <mesh position={[0, 0, DETAIL_Z]}>
-                <torusGeometry args={[radius * 0.55, radius * 0.004, 4, 128]} />
-                <meshStandardMaterial color="#3a3a6a" opacity={0.35} transparent roughness={0.02} metalness={1.0} />
+                <torusGeometry args={[radius * 0.55, radius * 0.004, 4, 64]} />
+                <meshBasicMaterial color="#3a3a6a" opacity={0.35} transparent />
             </mesh>
 
-            {/* Spindle collar — front */}
+            {/* Spindle collar */}
             <mesh position={[0, 0, DETAIL_Z]} rotation={[-Math.PI / 2, 0, 0]}>
                 <cylinderGeometry args={[radius * 0.07, radius * 0.07, 0.002, 32]} />
                 <meshStandardMaterial color="#111111" roughness={0.3} />
             </mesh>
 
-            {/* Center hole — front */}
+            {/* Center hole */}
             <mesh position={[0, 0, HOLE_Z]} rotation={[-Math.PI / 2, 0, 0]}>
-                <cylinderGeometry args={[radius * 0.04, radius * 0.04, 0.01, 32]} />
-                <meshBasicMaterial color="#000000" />
-            </mesh>
-
-            {/* ── BACK FACE ──────────────────────────────────────────────────────── */}
-
-            <mesh position={[0, 0, -ART_Z]} rotation={[Math.PI / 2, 0, 0]}>
-                <cylinderGeometry args={[ART_R, ART_R, 0.002, 128]} />
-                <meshStandardMaterial
-                    key={albumTexture?.uuid ? albumTexture.uuid + "-back" : "art-back-loading"}
-                    map={albumTexture ?? undefined}
-                    color={albumTexture ? "#ffffff" : "#1a1a2e"}
-                    roughness={0.3}
-                    metalness={albumTexture ? 0.05 : 0}
-                />
-            </mesh>
-
-            {GROOVE_RADII.filter((_, i) => i % 2 === 0).map((r, i) => (
-                <mesh key={`gb-${i}`} position={[0, 0, -DETAIL_Z]}>
-                    <torusGeometry args={[r, radius * 0.005, 6, 128]} />
-                    <meshStandardMaterial color="#000000" opacity={0.18} transparent roughness={0.1} metalness={0.95} />
-                </mesh>
-            ))}
-
-            <mesh position={[0, 0, -DETAIL_Z]} rotation={[Math.PI / 2, 0, 0]}>
-                <cylinderGeometry args={[radius * 0.07, radius * 0.07, 0.002, 32]} />
-                <meshStandardMaterial color="#111111" roughness={0.3} />
-            </mesh>
-
-            <mesh position={[0, 0, -HOLE_Z]} rotation={[Math.PI / 2, 0, 0]}>
                 <cylinderGeometry args={[radius * 0.04, radius * 0.04, 0.01, 32]} />
                 <meshBasicMaterial color="#000000" />
             </mesh>
