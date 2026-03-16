@@ -5,29 +5,19 @@ import { NextResponse } from "next/server";
 // NOTE: Any time scopes are changed, users must re-authenticate.
 // Existing tokens will NOT gain new scopes retroactively.
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────────────────────
 interface SpotifyImage {
     url: string;
-    width: number;
-    height: number;
 }
 
-interface SpotifyTrackObject {
-    id: string;
-    name: string;
-    album: {
-        id: string;
-        name: string;
-        images: SpotifyImage[];
-    };
-}
-
-// February 2026 Spotify API change:
-//   - Old field: items[].track  (now deprecated, kept here as fallback)
-//   - New field: items[].item   (use this)
-// See: spotifyapi.md — "[RENAMED] tracks.tracks.track -> items.items.item"
+// SpotifyPlaylistItem fields are typed loosely on purpose — the Feb 2026 API
+// can return either a TrackObject or an EpisodeObject in the `item` field.
+// We use `any` and check `.type` at runtime to safely skip episodes.
 interface SpotifyPlaylistItem {
-    item: SpotifyTrackObject | null; // new field (Feb 2026)
-    track: SpotifyTrackObject | null; // deprecated — fallback only
+    item: { type?: string; id?: string; name?: string; album?: { id?: string; name?: string; images?: SpotifyImage[] } } | null;
+    track: { type?: string; id?: string; name?: string; album?: { id?: string; name?: string; images?: SpotifyImage[] } } | null;
 }
 
 interface SpotifyItemsPage {
@@ -43,19 +33,6 @@ export interface TrackData {
     albumCoverUrl: string;
 }
 
-// GET /api/spotify/playlist-tracks/[id]
-//
-// February 2026 API migration (source: spotifyapi.md):
-//   BEFORE: GET /playlists/{id}/tracks  (limit max: 100)  [REMOVED]
-//   AFTER:  GET /playlists/{id}/items   (limit max: 50)   [current]
-//
-// Response field rename:
-//   BEFORE: page.items[].track
-//   AFTER:  page.items[].item  (track is now deprecated)
-//
-// Access restriction (from spotifyapi.md line 6):
-//   "Only accessible for playlists owned by the current user or
-//    playlists the user is a collaborator of."
 export async function GET(
     req: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -64,19 +41,14 @@ export async function GET(
     const { id } = await params;
 
     console.log("[playlist-tracks] route hit, id:", id);
-    console.log(
-        "[playlist-tracks] accessToken present:",
-        !!session?.accessToken,
-        "| prefix:",
-        session?.accessToken?.slice(0, 12) ?? "MISSING"
-    );
+    console.log("[playlist-tracks] accessToken present:", !!session?.accessToken, "| prefix:", session?.accessToken?.slice(0, 12) ?? "MISSING");
 
     if (!session?.accessToken) {
         console.log("[playlist-tracks] 401 — no access token in session");
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Pre-check: confirm token is alive before calling the playlist endpoint
+    // Pre-check: confirm token is alive
     const meRes = await fetch("https://api.spotify.com/v1/me", {
         headers: { Authorization: `Bearer ${session.accessToken}` },
     });
@@ -84,54 +56,110 @@ export async function GET(
     if (!meRes.ok) {
         const meBody = await meRes.json().catch(() => ({}));
         console.log("[playlist-tracks] token expired or invalid:", JSON.stringify(meBody));
-        return NextResponse.json(
-            { error: "Token invalid or expired — please sign out and sign back in", detail: meBody },
-            { status: meRes.status }
-        );
+        return NextResponse.json({ error: "Token invalid — please re-authenticate", detail: meBody }, { status: meRes.status });
     }
 
-    const tracks: TrackData[] = [];
+    // ── Pagination loop ─────────────────────────────────────────────────────
+    let allItems: SpotifyPlaylistItem[] = [];
+    let offset = 0;
+    const limit = 50; // Feb 2026 API max is 50 (was 100 on /tracks endpoint)
 
-    // ── Updated endpoint (Feb 2026): /items instead of /tracks, limit max 50 ──
-    const endpointUrl = `https://api.spotify.com/v1/playlists/${id}/items?limit=50`;
-    console.log("[playlist-tracks] calling endpoint:", endpointUrl.split("?")[0]);
-    let url: string | null = endpointUrl;
+    while (true) {
+        const pageUrl = `https://api.spotify.com/v1/playlists/${id}/items?limit=${limit}&offset=${offset}`;
+        console.log(`[playlist-tracks] fetching offset ${offset}:`, pageUrl.split("?")[0]);
 
-    while (url) {
-        const res = await fetch(url, {
+        const res = await fetch(pageUrl, {
             headers: { Authorization: `Bearer ${session.accessToken}` },
         });
 
-        console.log("[playlist-tracks] Spotify response status:", res.status, "url:", url.split("?")[0]);
+        console.log("[playlist-tracks] Spotify response status:", res.status);
 
         if (!res.ok) {
             const raw = await res.json().catch(() => ({}));
             console.log("[playlist-tracks] Spotify error body:", JSON.stringify(raw));
-            return NextResponse.json(
-                { error: "Spotify API error", status: res.status, detail: raw },
-                { status: res.status }
-            );
+            return NextResponse.json({ error: "Spotify API error", status: res.status, detail: raw }, { status: res.status });
         }
 
         const page = (await res.json()) as SpotifyItemsPage;
+        const pageItems = page.items ?? [];
 
-        for (const item of page.items) {
-            // Use new `item` field; fall back to deprecated `track` for safety
-            const trackData = item.item ?? item.track;
-            if (!trackData) continue; // skip local files, deleted tracks, episodes
+        console.log(`[playlist-tracks] page at offset ${offset}: ${pageItems.length} items, next: ${!!page.next}`);
 
-            tracks.push({
-                trackId: trackData.id,
-                trackName: trackData.name,
-                albumId: trackData.album.id,
-                albumName: trackData.album.name,
-                albumCoverUrl: trackData.album.images[0]?.url ?? "",
+        // Diagnose the raw shape of the first 3 items on the first page
+        if (offset === 0) {
+            pageItems.slice(0, 3).forEach((pi, i) => {
+                console.log(`[playlist-tracks] raw item[${i}]:`, JSON.stringify({
+                    hasItem: !!pi.item,
+                    hasTrack: !!pi.track,
+                    itemType: pi.item?.type ?? "null",
+                    itemName: pi.item?.name ?? "null",
+                    albumImages: pi.item?.album?.images?.length ?? "no album",
+                }));
             });
         }
 
-        url = page.next;
+        allItems = allItems.concat(pageItems);
+        if (!page.next || pageItems.length === 0) break;
+        offset += limit;
     }
 
-    console.log(`[playlist-tracks] returning ${tracks.length} tracks for playlist ${id}`);
+    console.log("[playlist-tracks] total items from Spotify:", allItems.length);
+
+    // ── Map items → TrackData ───────────────────────────────────────────────
+    let validCover = 0;
+    let missingCover = 0;
+    let skippedNull = 0;
+    let skippedEpisode = 0;
+
+    const tracks: TrackData[] = [];
+
+    allItems.forEach((pi, i) => {
+        // Use new `item` field; fall back to deprecated `track` for safety
+        const raw = pi.item ?? pi.track;
+
+        if (!raw) {
+            console.warn(`[playlist-tracks] item[${i}] — both item and track are null (local file / deleted), skipping`);
+            skippedNull++;
+            return;
+        }
+
+        // TYPE GUARD: skip podcast episodes — they have no .album field
+        // item.type is 'track' for songs, 'episode' for podcasts
+        if (raw.type && raw.type !== "track") {
+            console.warn(`[playlist-tracks] item[${i}] "${raw.name}" is type "${raw.type}" (not a track) — skipping`);
+            skippedEpisode++;
+            return;
+        }
+
+        if (!raw.album) {
+            console.warn(`[playlist-tracks] item[${i}] "${raw.name ?? "?"}" has no album object`);
+            missingCover++;
+            return;
+        }
+
+        if (!raw.album.images || raw.album.images.length === 0) {
+            console.warn(`[playlist-tracks] item[${i}] "${raw.name}" album "${raw.album.name}" has empty images array`);
+            missingCover++;
+            return;
+        }
+
+        const coverUrl = raw.album.images[0]?.url;
+        if (!coverUrl) {
+            console.warn(`[playlist-tracks] item[${i}] "${raw.name}" images[0].url is undefined`);
+            missingCover++;
+            return;
+        }
+
+        validCover++;
+        tracks.push({
+            trackId: raw.id ?? "",
+            trackName: raw.name ?? "",
+            albumId: raw.album.id ?? "",
+            albumName: raw.album.name ?? "",
+            albumCoverUrl: coverUrl,
+        });
+    });
+
+    console.log(`[playlist-tracks] valid covers: ${validCover} | missing covers: ${missingCover} | skipped null: ${skippedNull} | skipped episodes: ${skippedEpisode} | final: ${tracks.length}`);
     return NextResponse.json({ tracks });
 }

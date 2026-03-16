@@ -21,47 +21,61 @@ interface VinylSceneProps {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PLACEMENT ALGORITHM — Golden-angle spiral
+// PLACEMENT — Grid with deterministic organic jitter (Issue 2)
 //
-// The golden angle (~137.5°) is the same packing found in sunflower seeds:
-// it distributes any number of items evenly across space with no repetitive
-// patterns, regardless of count.  Combined with increasing radius, the result
-// is an organic spread that never forms a grid.
+// Replaces the golden-angle spiral.  A wider-than-tall grid ensures every disc
+// has clear breathing room (5.5 u horizontal, 5.0 u vertical).  The jitter is
+// computed from sin/cos of magic numbers — deterministic (same every render)
+// and bounded (never causes overlap at 50+ discs).
 // ─────────────────────────────────────────────────────────────────────────────
-const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5)); // ≈ 2.399 rad ≈ 137.5°
-
 function getPosition(index: number, total: number): [number, number, number] {
-    const radius = 2.5 + (index / total) * 5.5;
-    const theta = index * GOLDEN_ANGLE;
-    const x = Math.cos(theta) * radius * 1.6;
-    const y = Math.sin(theta) * radius * 0.85;
-    const z = -((index % 5) * 0.6);
-    return [x, y, z];
+    const cols = Math.ceil(Math.sqrt(total * 1.6)); // wider than tall
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+
+    const spacingX = 5.5;
+    const spacingY = 5.0;
+    const totalCols = cols;
+    const totalRows = Math.ceil(total / cols);
+    const offsetX = ((totalCols - 1) * spacingX) / 2;
+    const offsetY = ((totalRows - 1) * spacingY) / 2;
+
+    // Bounded deterministic jitter — never causes overlap
+    const jitterX = (Math.sin(index * 127.1) * 0.5 + Math.cos(index * 311.7) * 0.3) * 1.2;
+    const jitterY = (Math.sin(index * 269.5) * 0.5 + Math.cos(index * 183.3) * 0.3) * 1.0;
+    const jitterZ = (Math.sin(index * 74.3) * 0.5) * 1.5; // depth variation
+
+    return [
+        col * spacingX - offsetX + jitterX,
+        -(row * spacingY - offsetY) + jitterY,
+        jitterZ,
+    ];
 }
 
+// Subtle Y rotation — not flat-on and not edge-on (±10° max)
 function getYRotation(index: number): number {
-    return (index * 37.5 * Math.PI) / 180;
+    return Math.sin(index * 45.3) * 0.18;
 }
 
+// Minor scale variety so rows don't look uniform
 function getScale(index: number): number {
-    return 0.9 + (index % 3) * 0.08;
+    return 0.9 + (index % 3) * 0.05;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// VINYL SCENE
+// VinylScene
 //
-// Canvas layers:
-//   z-index: 0 — GLSL ShaderBackground (separate canvas, not in this component)
-//   z-index: 1 — This R3F Canvas (transparent, shows shader through)
+// Layer order:
+//   z-index: 0 — GLSL shader (ShaderBackground, separate canvas)
+//   z-index: 1 — This R3F canvas (transparent background)
 //
-// gl.alpha = true + no <color> attachment = transparent canvas bg.
-// Camera at (0, 0, 14) with fov 75 gives enough FOV to see the full spiral
-// even with 50+ discs spread to radius ≈ 8 × 1.6 = 12.8 in X.
+// Camera pulled back to z=22 with fov=70 to fit the full grid (even at 50+
+// discs the widest extent is ~cols/2 * 5.5 + jitter ≈ 24 u at 50 tracks).
+// autoRotate gives a slow passive orbit so users see the spread over time.
 // ─────────────────────────────────────────────────────────────────────────────
 export function VinylScene({ playlistId }: VinylSceneProps) {
     const [tracks, setTracks] = useState<Track[]>([]);
 
-    // Fetch all tracks for this playlist from our server-side proxy
     useEffect(() => {
         if (!playlistId) return;
         fetch(`/api/spotify/playlist-tracks/${playlistId}`)
@@ -74,6 +88,15 @@ export function VinylScene({ playlistId }: VinylSceneProps) {
                 data.tracks.forEach((track: Track, i: number) => {
                     console.log(`  ${i + 1}. ${track.trackName}`);
                 });
+                // Step 5 diagnostic: split by whether cover URL is present
+                const withCover = data.tracks.filter((t: Track) => !!t.albumCoverUrl);
+                const withoutCover = data.tracks.filter((t: Track) => !t.albumCoverUrl);
+                console.log("[VinylScene] raw API response length:", data.tracks.length);
+                console.log(`[VinylScene] tracks WITH albumCoverUrl: ${withCover.length}`);
+                console.log(`[VinylScene] tracks WITHOUT albumCoverUrl: ${withoutCover.length}`);
+                if (withoutCover.length > 0) {
+                    console.warn("[VinylScene] tracks missing cover:", withoutCover.map((t: Track) => t.trackName));
+                }
                 setTracks(data.tracks);
             })
             .catch((err) => console.error("[VinylScene] fetch error:", err));
@@ -89,43 +112,38 @@ export function VinylScene({ playlistId }: VinylSceneProps) {
                 pointerEvents: "auto",
             }}
             gl={{ alpha: true, antialias: true }}
-            camera={{ fov: 75, position: [0, 0, 14], near: 0.1, far: 200 }}
+            // Camera at z=22, fov=70 — fits a 50-disc grid without clipping
+            camera={{ fov: 70, position: [0, 0, 22], near: 0.1, far: 200 }}
         >
-            {/* ── Lighting ──────────────────────────────────────────────────── */}
+            {/* ── Lighting ──────────────────────────────────────────────────────── */}
 
-            {/* Soft ambient fill */}
-            <ambientLight intensity={0.3} />
+            {/* Ambient fill at 0.6 — below 0.5 unlit disc sides appear pitch black */}
+            <ambientLight intensity={0.6} />
 
-            {/* Main white key light (shadows disabled — not needed for this scene) */}
-            <pointLight
-                position={[5, 5, 5]}
-                intensity={1.2}
-                color="#ffffff"
-            />
+            {/* Main warm white key light */}
+            <pointLight position={[6, 6, 8]} intensity={1.4} color="#ffffff" />
 
-            {/* Blue-purple fill — matches the shader background palette and
-          creates iridescent shimmer on the metalness=1 shimmer rings */}
-            <pointLight position={[-5, -3, 2]} intensity={0.4} color="#3a3aff" />
+            {/* Blue-purple fill — creates iridescent shimmer on metalness=1 rings,
+          matches the Spotify-green GLSL shader palette complementarily */}
+            <pointLight position={[-6, -4, 3]} intensity={0.5} color="#3a3aff" />
 
-            {/* ── Camera controls ───────────────────────────────────────────── */}
-            {/*
-        autoRotate gives a slow passive camera orbit so users see the full
-        spiral spread over time without needing to interact.
-        Zoom and pan are disabled to keep the experience focused.
-      */}
+            {/* Subtle warm rim light from behind — separates discs from bg */}
+            <pointLight position={[0, 0, -10]} intensity={0.2} color="#ff8844" />
+
+            {/* ── Camera controls ───────────────────────────────────────────────── */}
             <OrbitControls
                 enableDamping
                 dampingFactor={0.05}
                 enableZoom={false}
                 enablePan={false}
                 autoRotate
-                autoRotateSpeed={0.25}
+                autoRotateSpeed={0.15}
             />
 
-            {/* ── One disc per track — renders nothing while loading (tracks=[]) ─ */}
+            {/* ── One disc per track — empty canvas while loading ─────────────── */}
             {tracks.map((track, i) => (
                 <VinylRecord
-                    key={track.trackId + i} // append index so duplicate trackIds are safe
+                    key={track.trackId + i}
                     albumCoverUrl={track.albumCoverUrl}
                     position={getPosition(i, tracks.length)}
                     yRotation={getYRotation(i)}

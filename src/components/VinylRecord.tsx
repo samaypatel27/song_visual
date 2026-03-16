@@ -5,45 +5,32 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { Group } from "three";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────────────────────────────────────────
 export interface VinylRecordProps {
-    albumCoverUrl: string;                // Spotify CDN image URL
+    albumCoverUrl: string;
     position: [number, number, number];
-    yRotation: number;               // radians
+    yRotation: number;
     scale: number;
-    index: number;               // used to offset sine phase
+    index: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CONSTANTS
+// DISC GEOMETRY CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
+const TOTAL_R = 2.2;
+const HALF_H = 0.055 / 2;         // 0.0275
+const ART_R = 0.96 * TOTAL_R;    // 2.112 — leaves 4% dark rim
+const ART_Z = HALF_H + 0.003;    // 0.0305
+const DETAIL_Z = HALF_H + 0.006;    // 0.0335
+const HOLE_Z = HALF_H + 0.008;    // 0.0355
 
-// 12 groove rings evenly spaced between r = 0.44 and r = 0.96
 const GROOVE_RADII = Array.from(
-    { length: 12 },
-    (_, i) => 0.44 + (i / 11) * (0.96 - 0.44)
+    { length: 8 },
+    (_, i) => 0.15 * TOTAL_R + (i / 7) * (0.93 * TOTAL_R - 0.15 * TOTAL_R)
 );
 
-// The main disc cylinder (height 0.045) is rotated so its face points toward
-// the camera (+Z). With rotation.x = -PI/2 the "bottom" face (local y = -0.0225)
-// ends up at world z = +0.0225.  Everything layered on top of that face goes at
-// z > 0.0225.  We use LAYER_Z as a convenient offset above the disc surface.
-const HALF_HEIGHT = 0.045 / 2;   // = 0.0225
-const LAYER_Z = HALF_HEIGHT + 0.002; // = 0.0245
+const IDLE_SPEED = (Math.PI * 2) / 15;
+const HOVER_SPEED = (Math.PI * 2) / 1.5;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// VINYL RECORD COMPONENT
-//
-// Sleeve code is preserved below in a commented block (kept per spec) but not
-// mounted in the scene.
-//
-// Disc orientation:
-//   • Main cylinder rotation.x = -PI/2  → flat face toward +Z (camera)
-//   • discSpinRef wraps all disc content and rotates around Z each frame
-//     → appears as face-on record spin from the camera's perspective
-// ─────────────────────────────────────────────────────────────────────────────
 export function VinylRecord({
     albumCoverUrl,
     position,
@@ -51,140 +38,172 @@ export function VinylRecord({
     scale,
     index,
 }: VinylRecordProps) {
+    // ── Diagnostic (Step 6) ─────────────────────────────────────────────────
+    useEffect(() => {
+        if (!albumCoverUrl) {
+            console.warn("[VinylRecord] albumCoverUrl is falsy — disc will render blank:", albumCoverUrl);
+        } else {
+            console.log("[VinylRecord] albumCoverUrl received:", albumCoverUrl.slice(0, 60) + "...");
+        }
+    }, [albumCoverUrl]);
+
     // ── Refs ──────────────────────────────────────────────────────────────────
     const groupRef = useRef<Group>(null);
-    const discSpinRef = useRef<Group>(null);
+    const basePosition = useRef<[number, number, number]>(position);
+    const baseYRotation = useRef(yRotation);
     const isHovered = useRef(false);
-    const spinSpeed = useRef(0.004);
+    const currentSpinSpeed = useRef(IDLE_SPEED);
+    const spinAngle = useRef(0);
 
-    // ── Album art texture (loaded imperatively to control crossOrigin) ─────────
+    // ── Texture (THREE.TextureLoader + crossOrigin — NOT useTexture) ──────────
+    // Spotify CDN (i.scdn.co) requires crossOrigin='anonymous' for WebGL textures.
+    // useTexture from @react-three/drei does NOT set crossOrigin for external URLs,
+    // which causes a silent black-face failure. TextureLoader is used manually.
     const [albumTexture, setAlbumTexture] = useState<THREE.Texture | null>(null);
 
     useEffect(() => {
         if (!albumCoverUrl) return;
 
         const loader = new THREE.TextureLoader();
-        // Spotify's CDN supports CORS — anonymous is required for WebGL textures.
         loader.crossOrigin = "anonymous";
 
-        const tex = loader.load(albumCoverUrl, (t) => {
-            t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
-            t.repeat.set(1, 1);
-            t.offset.set(0, 0);
-            t.needsUpdate = true;
-            setAlbumTexture(t);
-        });
+        const tex = loader.load(
+            albumCoverUrl,
+            (t) => {
+                // SUCCESS callback
+                t.colorSpace = THREE.SRGBColorSpace;
+                t.minFilter = THREE.LinearMipmapLinearFilter;
+                t.magFilter = THREE.LinearFilter;
+                t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+                t.repeat.set(1, 1);
+                t.offset.set(0, 0);
+                t.needsUpdate = true;
+                console.log("[VinylRecord] texture load SUCCESS", t, "image:", t.image);
+                setAlbumTexture(t);
+            },
+            undefined,
+            (err) => {
+                // ERROR callback — CORS failure or 404 will appear here
+                console.error("[VinylRecord] texture load FAILED", err, "url:", albumCoverUrl);
+            }
+        );
 
-        return () => {
-            tex.dispose();
-            setAlbumTexture(null);
-        };
+        return () => { tex.dispose(); setAlbumTexture(null); };
     }, [albumCoverUrl]);
 
-    // ── Per-frame animation ───────────────────────────────────────────────────
-    useFrame((state) => {
-        if (!groupRef.current || !discSpinRef.current) return;
-        const t = state.clock.elapsedTime;
+    // ── Animation ─────────────────────────────────────────────────────────────
+    useFrame(({ clock }, delta) => {
+        if (!groupRef.current) return;
+        const t = clock.elapsedTime;
+        const phase = index * 1.618;
 
-        // Lerp spin speed toward target (slow on hover, normal otherwise)
-        const targetSpeed = isHovered.current ? 0.001 : 0.004;
-        spinSpeed.current += (targetSpeed - spinSpeed.current) * 0.05;
-        discSpinRef.current.rotation.z += spinSpeed.current;
+        const targetSpeed = isHovered.current ? HOVER_SPEED : IDLE_SPEED;
+        currentSpinSpeed.current = THREE.MathUtils.lerp(currentSpinSpeed.current, targetSpeed, 0.06);
+        spinAngle.current += currentSpinSpeed.current * delta;
 
-        // Floating bob — accumulates in tiny per-frame increments (bounded by sin)
-        groupRef.current.position.y +=
-            Math.sin(t * 0.6 + index * 1.618) * 0.0006;
-
-        // Very subtle Y-axis sway
-        groupRef.current.rotation.y =
-            yRotation + Math.sin(t * 0.18 + index * 0.9) * 0.04;
-
-        // Hover scale — lerp to 1.15× or back to 1.0×
-        const targetScale = isHovered.current ? 1.15 : 1.0;
-        groupRef.current.scale.lerp(
-            new THREE.Vector3(targetScale, targetScale, targetScale),
-            0.08
-        );
+        groupRef.current.rotation.y = baseYRotation.current + spinAngle.current;
+        groupRef.current.position.y = basePosition.current[1] + Math.sin(t * ((Math.PI * 2) / 4) + phase) * 0.12;
+        groupRef.current.rotation.x = Math.sin(t * ((Math.PI * 2) / 6) + phase + 1.3) * 0.052;
     });
 
     // ── Pointer handlers ──────────────────────────────────────────────────────
-    const handlePointerOver = () => {
-        isHovered.current = true;
-        document.body.style.cursor = "pointer";
-    };
-    const handlePointerOut = () => {
-        isHovered.current = false;
-        document.body.style.cursor = "default";
-    };
+    const onPointerOver = () => { isHovered.current = true; document.body.style.cursor = "pointer"; };
+    const onPointerOut = () => { isHovered.current = false; document.body.style.cursor = "default"; };
 
     return (
         <group ref={groupRef} position={position} rotation={[0, yRotation, 0]} scale={scale}>
 
             {/*
-        ── SLEEVE (kept in code, not rendered) ────────────────────────────────
-        Spec: "keep the sleeve/black square component in code but not rendered".
-
-        <mesh position={[-0.9, 0, -0.04]} rotation={[0, Math.PI * (15/180), 0]} castShadow>
+        ── SLEEVE — kept in code, not rendered per spec ───────────────────────
+        <mesh position={[-0.9, 0, -0.04]} rotation={[0, Math.PI*(15/180), 0]}>
           <boxGeometry args={[2.4, 2.4, 0.02]} />
-          <meshStandardMaterial color="#ffffff" roughness={1} />
+          <meshStandardMaterial color="#ffffff" />
         </mesh>
-        <mesh position={[-0.9, 0, 0]} rotation={[0, Math.PI * (15/180), 0]} castShadow>
-          <boxGeometry args={[2.2, 2.2, 0.05]} />
-          <meshStandardMaterial color="#000000" roughness={0.8} />
-        </mesh>
-        ── END SLEEVE ──────────────────────────────────────────────────────────
       */}
 
-            {/* ── DISC SYSTEM ──────────────────────────────────────────────────── */}
-            {/*
-        discSpinRef rotates around Z every frame.
-        All disc children are parented here, so they all spin together.
-      */}
-            <group ref={discSpinRef}>
+            {/* ── MAIN VINYL CYLINDER ─────────────────────────────────────────── */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} onPointerOver={onPointerOver} onPointerOut={onPointerOut}>
+                <cylinderGeometry args={[TOTAL_R, TOTAL_R, 0.055, 128]} />
+                <meshStandardMaterial color="#0a0a0a" roughness={0.18} metalness={0.75} />
+            </mesh>
 
-                {/* Main vinyl body — dark glossy disc */}
-                <mesh
-                    rotation={[-Math.PI / 2, 0, 0]}
-                    castShadow
-                    onPointerOver={handlePointerOver}
-                    onPointerOut={handlePointerOut}
-                >
-                    <cylinderGeometry args={[1.0, 1.0, 0.045, 128]} />
-                    <meshStandardMaterial color="#0a0a0a" roughness={0.18} metalness={0.75} />
+            {/* ── FRONT FACE ────────────────────────────────────────────────────── */}
+
+            {/* Art disc — front.
+          key={albumTexture?.uuid} forces a full material remount when the texture
+          loads — bypasses R3F's in-place patch which skips material.needsUpdate=true.
+          Without this, the dark fallback material never gets replaced visually. */}
+            <mesh position={[0, 0, ART_Z]} rotation={[-Math.PI / 2, 0, 0]} onPointerOver={onPointerOver} onPointerOut={onPointerOut}>
+                <cylinderGeometry args={[ART_R, ART_R, 0.002, 128]} />
+                <meshStandardMaterial
+                    key={albumTexture?.uuid ?? "art-front-loading"}
+                    map={albumTexture ?? undefined}
+                    color={albumTexture ? "#ffffff" : "#1a1a2e"}
+                    roughness={0.3}
+                    metalness={albumTexture ? 0.05 : 0}
+                />
+            </mesh>
+
+            {/* Groove rings — 8 semi-transparent over art */}
+            {GROOVE_RADII.map((r, i) => (
+                <mesh key={`gf-${i}`} position={[0, 0, DETAIL_Z]}>
+                    <torusGeometry args={[r, 0.012, 6, 128]} />
+                    <meshStandardMaterial color="#000000" opacity={0.18} transparent roughness={0.1} metalness={0.95} />
                 </mesh>
+            ))}
 
-                {/* 12 groove rings — outer vinyl area (r 0.44 → 0.96) */}
-                {GROOVE_RADII.map((r, i) => (
-                    <mesh key={`groove-${i}`} position={[0, 0, LAYER_Z]}>
-                        <torusGeometry args={[r, 0.0035, 4, 128]} />
-                        <meshStandardMaterial color="#1a1a1a" roughness={0.3} metalness={0.9} />
-                    </mesh>
-                ))}
+            {/* Iridescent shimmer ring */}
+            <mesh position={[0, 0, DETAIL_Z]}>
+                <torusGeometry args={[0.55 * TOTAL_R, 0.008, 4, 128]} />
+                <meshStandardMaterial color="#3a3a6a" opacity={0.35} transparent roughness={0.02} metalness={1.0} />
+            </mesh>
 
-                {/* Shimmer ring — catches the blue-purple fill light */}
-                <mesh position={[0, 0, LAYER_Z]}>
-                    <torusGeometry args={[0.7, 0.012, 4, 128]} />
-                    <meshStandardMaterial color="#2a2a4a" roughness={0.05} metalness={1.0} />
+            {/* Spindle collar — front */}
+            <mesh position={[0, 0, DETAIL_Z]} rotation={[-Math.PI / 2, 0, 0]}>
+                <cylinderGeometry args={[0.07 * TOTAL_R, 0.07 * TOTAL_R, 0.002, 32]} />
+                <meshStandardMaterial color="#111111" roughness={0.3} />
+            </mesh>
+
+            {/* Center spindle hole — front */}
+            <mesh position={[0, 0, HOLE_Z]} rotation={[-Math.PI / 2, 0, 0]}>
+                <cylinderGeometry args={[0.04 * TOTAL_R, 0.04 * TOTAL_R, 0.01, 32]} />
+                <meshBasicMaterial color="#000000" />
+            </mesh>
+
+            {/* ── BACK FACE ─────────────────────────────────────────────────────── */}
+
+            {/* Art disc — back.
+          Same key-based remount fix as front disc. */}
+            <mesh position={[0, 0, -ART_Z]} rotation={[Math.PI / 2, 0, 0]}>
+                <cylinderGeometry args={[ART_R, ART_R, 0.002, 128]} />
+                <meshStandardMaterial
+                    key={albumTexture?.uuid ? albumTexture.uuid + "-back" : "art-back-loading"}
+                    map={albumTexture ?? undefined}
+                    color={albumTexture ? "#ffffff" : "#1a1a2e"}
+                    roughness={0.3}
+                    metalness={albumTexture ? 0.05 : 0}
+                />
+            </mesh>
+
+            {/* Groove rings — back (4 rings) */}
+            {GROOVE_RADII.filter((_, i) => i % 2 === 0).map((r, i) => (
+                <mesh key={`gb-${i}`} position={[0, 0, -DETAIL_Z]}>
+                    <torusGeometry args={[r, 0.012, 6, 128]} />
+                    <meshStandardMaterial color="#000000" opacity={0.18} transparent roughness={0.1} metalness={0.95} />
                 </mesh>
+            ))}
 
-                {/* Album art label disc (r = 0.42) — sits at centre of record */}
-                <mesh position={[0, 0, LAYER_Z]} rotation={[-Math.PI / 2, 0, 0]}>
-                    <cylinderGeometry args={[0.42, 0.42, 0.001, 64]} />
-                    <meshStandardMaterial
-                        map={albumTexture ?? undefined}
-                        color={albumTexture ? "#ffffff" : "#1c1c2e"} // dark fallback while loading
-                        roughness={0.4}
-                        metalness={0}
-                    />
-                </mesh>
+            {/* Spindle collar — back */}
+            <mesh position={[0, 0, -DETAIL_Z]} rotation={[Math.PI / 2, 0, 0]}>
+                <cylinderGeometry args={[0.07 * TOTAL_R, 0.07 * TOTAL_R, 0.002, 32]} />
+                <meshStandardMaterial color="#111111" roughness={0.3} />
+            </mesh>
 
-                {/* Center hole — pure black disc punches a visual hole through the label */}
-                <mesh position={[0, 0, LAYER_Z + 0.002]} rotation={[-Math.PI / 2, 0, 0]}>
-                    <cylinderGeometry args={[0.072, 0.072, 0.1, 16]} />
-                    <meshBasicMaterial color="#000000" />
-                </mesh>
-
-            </group>
+            {/* Center spindle hole — back */}
+            <mesh position={[0, 0, -HOLE_Z]} rotation={[Math.PI / 2, 0, 0]}>
+                <cylinderGeometry args={[0.04 * TOTAL_R, 0.04 * TOTAL_R, 0.01, 32]} />
+                <meshBasicMaterial color="#000000" />
+            </mesh>
 
         </group>
     );
