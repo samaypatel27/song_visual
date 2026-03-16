@@ -179,30 +179,19 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
 
   useEffect(() => {
     if (!playlistId) return;
-    fetch(`/api/spotify/playlist-tracks/${playlistId}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`${res.status}`);
-        return res.json();
-      })
-      .then((data: { tracks: Track[] }) => {
-        console.log("HERE ARE ALL THE SONGS:");
-        data.tracks.forEach((t, i) =>
-          console.log(`  ${i + 1}. ${t.trackName}`),
-        );
-
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/spotify/playlist-tracks/${playlistId}`);
+        if (!res.ok) throw new Error(String(res.status));
+        const data: { tracks: Track[] } = await res.json();
         const groups = groupByAlbum(data.tracks);
-        console.log(
-          `[VinylScene] unique albums: ${groups.length} from ${data.tracks.length} tracks`,
-        );
-        groups.forEach((a) =>
-          console.log(
-            `  "${a.albumName}" — ${a.trackCount} track(s), r=${getDiscRadius(a.trackCount).toFixed(2)}`,
-          ),
-        );
-
+        console.log(`[VinylScene] ${groups.length} albums, ${data.tracks.length} tracks`);
         setTracks(data.tracks);
-      })
-      .catch((err) => console.error("[VinylScene] fetch error:", err));
+      } catch (err) {
+        console.error("[VinylScene] fetch error:", err);
+      }
+    };
+    void load();
   }, [playlistId]);
 
   // groupByAlbum already sorts largest → smallest
@@ -225,7 +214,9 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
       camera={{ fov: 70, position: [0, 0, 22], near: 0.1, far: 200 }}
     >
       {/* Lighting */}
-      <ambientLight intensity={0.6} />
+      <ambientLight intensity={0.8} />
+      <directionalLight position={[0, 5, 15]} intensity={0.6} color="#fff8f0" />
+      {/* wall fill */}
       <pointLight position={[6, 6, 8]} intensity={1.4} color="#ffffff" />
       <pointLight position={[-6, -4, 3]} intensity={0.5} color="#3a3aff" />
       <pointLight position={[0, 0, -10]} intensity={0.2} color="#ff8844" />
@@ -269,7 +260,7 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
       <mesh position={[0, 0, -3]}>
         <planeGeometry args={[120, 70]} />
         <meshStandardMaterial
-          color="#d6cfc4"
+          color="#eeebe7"
           roughness={0.85}
           metalness={0.0}
         />
