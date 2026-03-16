@@ -7,9 +7,7 @@ import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import * as THREE from "three";
 import { VinylRecord } from "./VinylRecord";
 
-// ─────────────────────────────────────────────────────────────────────────────
 // TYPES
-// ─────────────────────────────────────────────────────────────────────────────
 interface Track {
     trackId: string;
     trackName: string;
@@ -29,10 +27,6 @@ export interface VinylSceneProps {
     playlistId: string;
     pressedDirection: React.MutableRefObject<"up" | "down" | "left" | "right" | "reset" | null>;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
 
 const groupByAlbum = (tracks: Track[]): AlbumGroup[] => {
     const map = new Map<string, AlbumGroup>();
@@ -54,8 +48,6 @@ const groupByAlbum = (tracks: Track[]): AlbumGroup[] => {
 
 export const getDiscRadius = (trackCount: number): number =>
     Math.min(1.8 + (trackCount - 1) * 0.45, 4.2);
-
-const getYRotation = (index: number) => Math.sin(index * 45.3) * 0.18;
 
 /**
  * Place discs from largest → smallest.
@@ -89,7 +81,7 @@ const generatePositions = (groups: AlbumGroup[]): [number, number, number][] => 
             // Map sin output [-1,1] → [0,1] then scale to placement zone
             const x = (Math.sin(seed * 127.1) * 0.5 + 0.5) * 2 * xRange - xRange;
             const y = (Math.sin(seed * 311.7) * 0.5 + 0.5) * 2 * yRange - yRange;
-            const z = Math.sin(seed * 74.3) * 2.0; // ±2 units of depth
+            const z = 0; 
 
             // Enforce minimum gap = sum of both radii + 1.5 unit padding
             const tooClose = positions.some((pos, j) => {
@@ -230,8 +222,6 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
                     key={group.albumId}
                     albumCoverUrl={group.albumCoverUrl}
                     position={positions[i] ?? [0, 0, 0]}
-                    yRotation={getYRotation(i)}
-                    index={i}
                     radius={getDiscRadius(group.trackCount)}
                 />
             ))}
