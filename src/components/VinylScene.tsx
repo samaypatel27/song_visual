@@ -5,7 +5,10 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import * as THREE from "three";
+
 import { VinylRecord } from "./VinylRecord";
+import { TableSurface } from "./TableSurface";
+import { WALL_WIDTH, WALL_HEIGHT, WALL_POSITION, WALL_ROTATION } from "./wallConstants";
 
 // TYPES
 interface Track {
@@ -284,14 +287,17 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
       ))}
 
       {/* WALL — customize color/texture/material here  */}
-      <mesh position={[0, 0, -3]}>
-        <planeGeometry args={[120, 70]} />
+      <mesh position={WALL_POSITION} rotation={WALL_ROTATION}>
+        <planeGeometry args={[WALL_WIDTH, WALL_HEIGHT]} />
         <meshStandardMaterial
           color="#eeebe7"
           roughness={0.85}
           metalness={0.0}
         />
       </mesh>
+
+      {/* Table surface at absolute bottom, in front of wall */}
+      <TableSurface />
     </Canvas>
   );
 }

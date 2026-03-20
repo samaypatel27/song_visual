@@ -1,39 +1,67 @@
 {
   "pages": {
+    "/_not-found/page": [
+      "static/chunks/webpack-e4855d7284083c0f.js",
+      "static/chunks/4bd1b696-8a11ac25f36ead0d.js",
+      "static/chunks/684-d918f190a3c1bb97.js",
+      "static/chunks/main-app-02969ad0bca05e11.js",
+      "static/chunks/app/_not-found/page-ea12a53135875406.js"
+    ],
     "/api/auth/[...nextauth]/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/auth/[...nextauth]/route.js"
-    ],
-    "/layout": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/layout.js"
-    ],
-    "/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/page.js"
-    ],
-    "/dashboard/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/dashboard/page.js"
+      "static/chunks/webpack-e4855d7284083c0f.js",
+      "static/chunks/4bd1b696-8a11ac25f36ead0d.js",
+      "static/chunks/684-d918f190a3c1bb97.js",
+      "static/chunks/main-app-02969ad0bca05e11.js",
+      "static/chunks/app/api/auth/[...nextauth]/route-c27b91dd37bca48c.js"
     ],
     "/api/spotify/playlists/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/spotify/playlists/route.js"
+      "static/chunks/webpack-e4855d7284083c0f.js",
+      "static/chunks/4bd1b696-8a11ac25f36ead0d.js",
+      "static/chunks/684-d918f190a3c1bb97.js",
+      "static/chunks/main-app-02969ad0bca05e11.js",
+      "static/chunks/app/api/spotify/playlists/route-f428336471f41abc.js"
     ],
-    "/playlist/[id]/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/playlist/[id]/page.js"
+    "/layout": [
+      "static/chunks/webpack-e4855d7284083c0f.js",
+      "static/chunks/4bd1b696-8a11ac25f36ead0d.js",
+      "static/chunks/684-d918f190a3c1bb97.js",
+      "static/chunks/main-app-02969ad0bca05e11.js",
+      "static/chunks/108-6fd10ffb5cd15049.js",
+      "static/chunks/app/layout-44bb1c686bf38594.js"
     ],
     "/api/spotify/playlist-tracks/[id]/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/spotify/playlist-tracks/[id]/route.js"
+      "static/chunks/webpack-e4855d7284083c0f.js",
+      "static/chunks/4bd1b696-8a11ac25f36ead0d.js",
+      "static/chunks/684-d918f190a3c1bb97.js",
+      "static/chunks/main-app-02969ad0bca05e11.js",
+      "static/chunks/app/api/spotify/playlist-tracks/[id]/route-ddc204e57cc79bfe.js"
+    ],
+    "/page": [
+      "static/chunks/webpack-e4855d7284083c0f.js",
+      "static/chunks/4bd1b696-8a11ac25f36ead0d.js",
+      "static/chunks/684-d918f190a3c1bb97.js",
+      "static/chunks/main-app-02969ad0bca05e11.js",
+      "static/chunks/108-6fd10ffb5cd15049.js",
+      "static/chunks/app/page-b65c5fbefbe70bdf.js"
+    ],
+    "/playlist/[id]/page": [
+      "static/chunks/webpack-e4855d7284083c0f.js",
+      "static/chunks/4bd1b696-8a11ac25f36ead0d.js",
+      "static/chunks/684-d918f190a3c1bb97.js",
+      "static/chunks/main-app-02969ad0bca05e11.js",
+      "static/chunks/b536a0f1-5c90a235a97b2aa8.js",
+      "static/chunks/bd904a5c-e3235fcb8d1242f5.js",
+      "static/chunks/51749ec1-3b2249b363378f84.js",
+      "static/chunks/544-fa3cbee0e204cc24.js",
+      "static/chunks/app/playlist/[id]/page-b53f012d1b5ea8d8.js"
+    ],
+    "/dashboard/page": [
+      "static/chunks/webpack-e4855d7284083c0f.js",
+      "static/chunks/4bd1b696-8a11ac25f36ead0d.js",
+      "static/chunks/684-d918f190a3c1bb97.js",
+      "static/chunks/main-app-02969ad0bca05e11.js",
+      "static/chunks/108-6fd10ffb5cd15049.js",
+      "static/chunks/app/dashboard/page-32d90416e4b977d3.js"
     ]
   }
 }
