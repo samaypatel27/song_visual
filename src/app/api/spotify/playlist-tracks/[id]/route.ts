@@ -1,13 +1,12 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { NextResponse } from "next/server";
+import { cache, TTL, playlistTracksKey } from "@/lib/cache";
 
 // NOTE: Any time scopes are changed, users must re-authenticate.
 // Existing tokens will NOT gain new scopes retroactively.
 
-// ─────────────────────────────────────────────────────────────────────────────
 // TYPES
-// ─────────────────────────────────────────────────────────────────────────────
 interface SpotifyImage {
     url: string;
 }
@@ -44,6 +43,17 @@ export async function GET(
     if (!session?.accessToken) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // Cache layer — return cached tracks if available 
+    const cacheKey = playlistTracksKey(session.accessToken, id);
+    const cached = cache.get<TrackData[]>(cacheKey);
+
+    if (cached) {
+        console.log(`[playlist-tracks] Cache HIT — returning ${cached.length} cached tracks`);
+        return NextResponse.json({ tracks: cached });
+    }
+
+    console.log(`[playlist-tracks] Cache MISS — fetching from Spotify`);
 
     const headers = { Authorization: `Bearer ${session.accessToken}` };
     const limit = 50;
@@ -137,5 +147,10 @@ export async function GET(
     });
 
     console.log(`[playlist-tracks] valid covers: ${validCover} | missing covers: ${missingCover} | skipped null: ${skippedNull} | skipped episodes: ${skippedEpisode} | final: ${tracks.length}`);
+
+    // Store in cache (TTL: 10 minutes) 
+    cache.set(cacheKey, tracks, TTL.PLAYLIST_TRACKS);
+    console.log(`[playlist-tracks] Cached ${tracks.length} tracks (TTL: ${TTL.PLAYLIST_TRACKS / 1000}s)`);
+
     return NextResponse.json({ tracks });
 }
