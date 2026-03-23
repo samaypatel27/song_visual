@@ -1,20 +1,24 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
-import { useFrame, useThree } from "@react-three/fiber";
+import { useRef, useEffect } from "react";
+import { useFrame } from "@react-three/fiber";
 import { useTexture } from "@react-three/drei";
 import * as THREE from "three";
 
 // Sizing logic: use the same as getDiscRadius
-const getCardSize = (trackCount: number) => Math.min(1.8 + (trackCount - 1) * 0.45, 4.2) * 2; // diameter to square side
-
-// No static random tilt for album covers — all upright
+const getCardSize = (trackCount: number) =>
+  Math.min(1.8 + (trackCount - 1) * 0.45, 4.2) * 2; // diameter to square side
 
 // Animation frequencies (incommensurable)
 const JIGGLE_FREQ = 1 / 3; // ~3s
 const MICRO_FREQ = 1 / 0.8; // ~0.8s
 const FLOAT_FREQ = 1 / 4; // ~4s
 const GOLDEN = 1.618;
+
+// Module-Level Mathematics (Singletons to avert GC spikes inside useFrame)
+const _frustum = new THREE.Frustum();
+const _projScreenMatrix = new THREE.Matrix4();
+const _sphere = new THREE.Sphere();
 
 export interface AlbumCoverProps {
   albumCoverUrl: string;
@@ -24,23 +28,34 @@ export interface AlbumCoverProps {
   scale?: number;
 }
 
-
-export function AlbumCover({ albumCoverUrl, position, trackCount, index, scale = 1 }: AlbumCoverProps) {
+export function AlbumCover({
+  albumCoverUrl,
+  position,
+  trackCount,
+  index,
+  scale = 1,
+}: AlbumCoverProps) {
   const groupRef = useRef<THREE.Group>(null);
   const discGroupRef = useRef<THREE.Group>(null);
-  const [hovered, setHovered] = useState(false);
+  const recordTransformRef = useRef<THREE.Group>(null);
+
   const cardSize = getCardSize(trackCount);
   const cardDepth = 0.22;
   const borderInset = 0.04 * cardSize; // 4% inset
-  const borderThickness = 0.015; // ~1.5px at world scale
   const shadowOffset = [0, 0, -0.02]; // for AO shadow
-  const wallColor = "#d0cfc8"; // match wall background for corner mask
 
-  // For bevel highlight animation
-  const [bevelOpacity, setBevelOpacity] = useState(0.12);
-  const [topBevelOpacity, setTopBevelOpacity] = useState(0.18);
-  // For record slide animation
-  const [recordSlide, setRecordSlide] = useState(0);
+  // Refs for tracking animation state cleanly without reacting
+  const hoveredRef = useRef(false);
+  const bevelOpacityRef = useRef(0.12);
+  const topBevelOpacityRef = useRef(0.18);
+  const recordSlideRef = useRef(0);
+  const currentScaleRef = useRef(scale);
+
+  // Material refs for rapid UI mutations without component re-renders
+  const topBevelRef = useRef<THREE.MeshStandardMaterial>(null);
+  const bottomBevelRef = useRef<THREE.MeshStandardMaterial>(null);
+  const leftBevelRef = useRef<THREE.MeshStandardMaterial>(null);
+  const rightBevelRef = useRef<THREE.MeshStandardMaterial>(null);
 
   // Album art texture
   const albumTexture = useTexture(albumCoverUrl);
@@ -49,51 +64,110 @@ export function AlbumCover({ albumCoverUrl, position, trackCount, index, scale =
   albumTexture.magFilter = THREE.LinearFilter;
 
   // Animation
-  useFrame(({ clock }) => {
+  useFrame(({ clock, camera }) => {
     if (!groupRef.current) return;
+
+    // 1. Core Frustum Culling Extraction
+    _projScreenMatrix.multiplyMatrices(
+      camera.projectionMatrix,
+      camera.matrixWorldInverse,
+    );
+    _frustum.setFromProjectionMatrix(_projScreenMatrix);
+    _sphere.set(groupRef.current.position, cardSize);
+
+    if (!_frustum.intersectsSphere(_sphere)) {
+      return; // Mesh outside camera view; immediately return
+    }
+
+    const isHovered = hoveredRef.current;
+    const targetScale = (isHovered ? 1.1 : 1.0) * scale;
+    const isTransitioning =
+      Math.abs(currentScaleRef.current - targetScale) > 0.001;
+
+    // 2. Idle State Mathematics Silence
+    if (!isHovered && !isTransitioning) {
+      groupRef.current.scale.set(targetScale, targetScale, 1);
+      groupRef.current.rotation.set(0, 0, 0); // Reset rotational static noise
+      groupRef.current.position.set(position[0], position[1], position[2]); // Rest native
+
+      if (discGroupRef.current) {
+        discGroupRef.current.visible = false;
+      }
+      return; // Math execution explicitly skipped for idle nodes
+    }
+
+    // Node is active/hovering/visible -> run Math
+    if (discGroupRef.current && isTransitioning) {
+      discGroupRef.current.visible = true;
+    }
+
     const t = clock.getElapsedTime();
     const phase = index * GOLDEN;
-    // Jiggle: Z rotation (no static tilt)
-    const jiggleAmp = hovered ? (Math.PI / 180) * 8 : (Math.PI / 180) * 4;
-    const microAmp = hovered ? (Math.PI / 180) * 2 : (Math.PI / 180) * 1;
-    const jiggle = Math.sin((t + phase) * JIGGLE_FREQ * 2 * Math.PI) * jiggleAmp;
-    const micro = Math.sin((t + phase * 0.7) * MICRO_FREQ * 2 * Math.PI) * microAmp;
+
+    // Transform Physics
+    const jiggleAmp = isHovered ? (Math.PI / 180) * 8 : (Math.PI / 180) * 4;
+    const microAmp = isHovered ? (Math.PI / 180) * 2 : (Math.PI / 180) * 1;
+    const jiggle =
+      Math.sin((t + phase) * JIGGLE_FREQ * 2 * Math.PI) * jiggleAmp;
+    const micro =
+      Math.sin((t + phase * 0.7) * MICRO_FREQ * 2 * Math.PI) * microAmp;
     const floatY = Math.sin((t + phase * 0.3) * FLOAT_FREQ * 2 * Math.PI) * 0.1;
-    // Scale
-    const targetScale = (hovered ? 1.1 : 1.0) * scale;
-    groupRef.current.scale.lerp(new THREE.Vector3(targetScale, targetScale, 1), 0.18);
-    // Rotation — always upright, only animated Z
+
+    // Positional mutations
+    currentScaleRef.current += (targetScale - currentScaleRef.current) * 0.18;
+    groupRef.current.scale.set(
+      currentScaleRef.current,
+      currentScaleRef.current,
+      1,
+    );
     groupRef.current.rotation.set(0, 0, jiggle + micro);
-    // Position
-    groupRef.current.position.set(position[0], position[1] + floatY, position[2]);
-    // Animate bevel highlight
-    setBevelOpacity((prev) => prev + ((hovered ? 0.22 : 0.12) - prev) * 0.18);
-    setTopBevelOpacity((prev) => prev + ((hovered ? 0.28 : 0.18) - prev) * 0.18);
-    // Animate record slide
-    setRecordSlide((prev) => prev + ((hovered ? 0.08 : 0) - prev) * 0.18);
-    // Hide disc in idle state
-    if (discGroupRef.current) {
-      discGroupRef.current.visible = false;
+    groupRef.current.position.set(
+      position[0],
+      position[1] + floatY,
+      position[2],
+    );
+
+    // Opacity / Side Effects Ref Mutations
+    bevelOpacityRef.current +=
+      ((isHovered ? 0.22 : 0.12) - bevelOpacityRef.current) * 0.18;
+    topBevelOpacityRef.current +=
+      ((isHovered ? 0.28 : 0.18) - topBevelOpacityRef.current) * 0.18;
+
+    if (topBevelRef.current)
+      topBevelRef.current.opacity = topBevelOpacityRef.current;
+    if (bottomBevelRef.current)
+      bottomBevelRef.current.opacity = bevelOpacityRef.current;
+    if (leftBevelRef.current)
+      leftBevelRef.current.opacity = bevelOpacityRef.current;
+    if (rightBevelRef.current)
+      rightBevelRef.current.opacity = bevelOpacityRef.current;
+
+    recordSlideRef.current +=
+      ((isHovered ? 0.08 : 0) - recordSlideRef.current) * 0.18;
+    if (recordTransformRef.current) {
+      recordTransformRef.current.position.x =
+        cardSize / 2 + cardSize * 0.44 * 0.1 + recordSlideRef.current;
     }
   });
 
-  // On mount, log disc hidden
-  useEffect(() => {
-    // eslint-disable-next-line no-console
-    console.log("[AlbumCover] disc hidden in idle state — visible only on expand");
-  }, []);
-
-  // Pointer events
+  // Pointer events hook
   const onPointerOver = () => {
-    setHovered(true);
+    hoveredRef.current = true;
     document.body.style.cursor = "pointer";
   };
   const onPointerOut = () => {
-    setHovered(false);
+    hoveredRef.current = false;
     document.body.style.cursor = "default";
   };
 
-  // Materials
+  const onUpdateGeom = (geom: any) => {
+    if (geom) {
+      geom.computeBoundingSphere();
+      geom.computeBoundingBox();
+    }
+  };
+
+  // Materials map
   const frontMaterial = new THREE.MeshStandardMaterial({
     map: albumTexture,
     color: "#fff",
@@ -127,68 +201,153 @@ export function AlbumCover({ albumCoverUrl, position, trackCount, index, scale =
   ];
 
   return (
-    <group ref={groupRef}>
+    <group ref={groupRef} frustumCulled={true}>
       {/* Ambient occlusion shadow at wall contact */}
-      <mesh position={[0, 0, shadowOffset[2]]}>
-        <planeGeometry args={[cardSize * 1.08, cardSize * 1.08]} />
-        <meshBasicMaterial color="#000" transparent opacity={0.22} depthWrite={false} />
+      <mesh position={[0, 0, shadowOffset[2]]} frustumCulled={true}>
+        <planeGeometry
+          args={[cardSize * 1.08, cardSize * 1.08]}
+          onUpdate={onUpdateGeom}
+        />
+        <meshBasicMaterial
+          color="#000"
+          transparent
+          opacity={0.22}
+          depthWrite={false}
+        />
       </mesh>
 
-      {/* Vinyl disc group — hidden in idle state, visible only on expand */}
-      <group ref={discGroupRef}>
-        {/* Main disc */}
-        <mesh rotation={[Math.PI / 2, 0, 0]} position={[cardSize / 2 + cardSize * 0.44 * 0.1 + recordSlide, 0, cardDepth * 0.3]}>
-          <cylinderGeometry args={[cardSize * 0.44, cardSize * 0.44, 0.04, 48]} />
-          <meshStandardMaterial color="#0a0a0a" roughness={0.12} metalness={0.85} />
-        </mesh>
-        {/* Groove rings */}
-        {[0.28, 0.36, 0.42].map((r, i) => (
-          <mesh key={i} rotation={[Math.PI / 2, 0, 0]} position={[cardSize / 2 + cardSize * 0.44 * 0.1 + recordSlide, 0, cardDepth * 0.3]}>
-            <torusGeometry args={[cardSize * r, 0.008, 8, 32]} />
-            <meshStandardMaterial color="#2a2a3e" roughness={0.05} metalness={1.0} />
+      {/* Record peeking out from right side */}
+      <group ref={discGroupRef} frustumCulled={true}>
+        <group
+          ref={recordTransformRef}
+          position={[cardSize / 2 + cardSize * 0.44 * 0.1, 0, cardDepth * 0.3]}
+          frustumCulled={true}
+        >
+          <mesh rotation={[Math.PI / 2, 0, 0]} frustumCulled={true}>
+            <cylinderGeometry
+              args={[cardSize * 0.44, cardSize * 0.44, 0.04, 48]}
+              onUpdate={onUpdateGeom}
+            />
+            <meshStandardMaterial
+              color="#0a0a0a"
+              roughness={0.12}
+              metalness={0.85}
+            />
           </mesh>
-        ))}
-        {/* (Other disc geometry like shimmer, label, spindle, shadow would go here if present) */}
+          
+          {/* Vinyl Inner Label */}
+          <mesh rotation={[Math.PI / 2, 0, 0]} frustumCulled={true}>
+            <cylinderGeometry
+              args={[cardSize * 0.15, cardSize * 0.15, 0.042, 32]}
+              onUpdate={onUpdateGeom}
+            />
+            <meshStandardMaterial
+              map={albumTexture}
+              roughness={0.8}
+              metalness={0.1}
+            />
+          </mesh>
+
+          {/* Spindle Hole */}
+          <mesh rotation={[Math.PI / 2, 0, 0]} frustumCulled={true}>
+            <cylinderGeometry
+              args={[cardSize * 0.015, cardSize * 0.015, 0.045, 16]}
+              onUpdate={onUpdateGeom}
+            />
+            <meshBasicMaterial color="#111" />
+          </mesh>
+
+        
+        </group>
       </group>
 
       {/* Album cover card (sleeve) */}
       <mesh
         onPointerOver={onPointerOver}
         onPointerOut={onPointerOut}
-        geometry={new THREE.BoxGeometry(cardSize, cardSize, cardDepth)}
         material={materials}
         castShadow
         receiveShadow
-      />
+        frustumCulled={true}
+      >
+        <boxGeometry
+          args={[cardSize, cardSize, cardDepth]}
+          onUpdate={onUpdateGeom}
+        />
+      </mesh>
 
       {/* Beveled/rounded edge highlight strips */}
       {/* Top */}
-      <mesh position={[0, cardSize / 2 - 0.03, cardDepth / 2 + 0.002]}>
-        <planeGeometry args={[cardSize - 0.08, 0.06]} />
-        <meshStandardMaterial color="#fff" transparent opacity={topBevelOpacity} roughness={0.0} metalness={0.8} />
+      <mesh
+        position={[0, cardSize / 2 - 0.03, cardDepth / 2 + 0.002]}
+        frustumCulled={true}
+      >
+        <planeGeometry args={[cardSize - 0.08, 0.06]} onUpdate={onUpdateGeom} />
+        <meshStandardMaterial
+          ref={topBevelRef}
+          color="#fff"
+          transparent
+          opacity={0.18}
+          roughness={0.0}
+          metalness={0.8}
+        />
       </mesh>
       {/* Bottom */}
-      <mesh position={[0, -cardSize / 2 + 0.03, cardDepth / 2 + 0.002]}>
-        <planeGeometry args={[cardSize - 0.08, 0.06]} />
-        <meshStandardMaterial color="#fff" transparent opacity={bevelOpacity} roughness={0.0} metalness={0.8} />
+      <mesh
+        position={[0, -cardSize / 2 + 0.03, cardDepth / 2 + 0.002]}
+        frustumCulled={true}
+      >
+        <planeGeometry args={[cardSize - 0.08, 0.06]} onUpdate={onUpdateGeom} />
+        <meshStandardMaterial
+          ref={bottomBevelRef}
+          color="#fff"
+          transparent
+          opacity={0.12}
+          roughness={0.0}
+          metalness={0.8}
+        />
       </mesh>
       {/* Left */}
-      <mesh position={[-cardSize / 2 + 0.03, 0, cardDepth / 2 + 0.002]} rotation={[0, 0, Math.PI / 2]}>
-        <planeGeometry args={[cardSize - 0.08, 0.06]} />
-        <meshStandardMaterial color="#fff" transparent opacity={bevelOpacity} roughness={0.0} metalness={0.8} />
+      <mesh
+        position={[-cardSize / 2 + 0.03, 0, cardDepth / 2 + 0.002]}
+        rotation={[0, 0, Math.PI / 2]}
+        frustumCulled={true}
+      >
+        <planeGeometry args={[cardSize - 0.08, 0.06]} onUpdate={onUpdateGeom} />
+        <meshStandardMaterial
+          ref={leftBevelRef}
+          color="#fff"
+          transparent
+          opacity={0.12}
+          roughness={0.0}
+          metalness={0.8}
+        />
       </mesh>
       {/* Right */}
-      <mesh position={[cardSize / 2 - 0.03, 0, cardDepth / 2 + 0.002]} rotation={[0, 0, Math.PI / 2]}>
-        <planeGeometry args={[cardSize - 0.08, 0.06]} />
-        <meshStandardMaterial color="#fff" transparent opacity={bevelOpacity} roughness={0.0} metalness={0.8} />
+      <mesh
+        position={[cardSize / 2 - 0.03, 0, cardDepth / 2 + 0.002]}
+        rotation={[0, 0, Math.PI / 2]}
+        frustumCulled={true}
+      >
+        <planeGeometry args={[cardSize - 0.08, 0.06]} onUpdate={onUpdateGeom} />
+        <meshStandardMaterial
+          ref={rightBevelRef}
+          color="#fff"
+          transparent
+          opacity={0.12}
+          roughness={0.0}
+          metalness={0.8}
+        />
       </mesh>
 
       {/* Subtle white border (inset plane) */}
-      <mesh position={[0, 0, cardDepth / 2 + 0.004]}>
-        <planeGeometry args={[cardSize - borderInset * 2, cardSize - borderInset * 2]} />
+      <mesh position={[0, 0, cardDepth / 2 + 0.004]} frustumCulled={true}>
+        <planeGeometry
+          args={[cardSize - borderInset * 2, cardSize - borderInset * 2]}
+          onUpdate={onUpdateGeom}
+        />
         <meshBasicMaterial color="#fff" transparent opacity={0.08} />
       </mesh>
-
     </group>
   );
 }

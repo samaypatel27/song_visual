@@ -1,7 +1,14 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { NextResponse } from "next/server";
-import { cache, TTL, playlistTracksKey } from "@/lib/cache";
+
+// Module-level in-memory cache
+interface CacheEntry {
+    data: any;
+    timestamp: number;
+}
+const localCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 60000; // 60 seconds
 
 // NOTE: Any time scopes are changed, users must re-authenticate.
 // Existing tokens will NOT gain new scopes retroactively.
@@ -11,9 +18,6 @@ interface SpotifyImage {
     url: string;
 }
 
-// SpotifyPlaylistItem fields are typed loosely on purpose — the Feb 2026 API
-// can return either a TrackObject or an EpisodeObject in the `item` field.
-// We use `any` and check `.type` at runtime to safely skip episodes.
 interface SpotifyPlaylistItem {
     item: { type?: string; id?: string; name?: string; album?: { id?: string; name?: string; images?: SpotifyImage[] } } | null;
     track: { type?: string; id?: string; name?: string; album?: { id?: string; name?: string; images?: SpotifyImage[] } } | null;
@@ -23,6 +27,8 @@ interface SpotifyItemsPage {
     items: SpotifyPlaylistItem[];
     next: string | null;
     total: number;
+    limit: number;
+    offset: number;
 }
 
 export interface TrackData {
@@ -44,52 +50,33 @@ export async function GET(
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Cache layer — return cached tracks if available 
-    const cacheKey = playlistTracksKey(session.accessToken, id);
-    const cached = cache.get<TrackData[]>(cacheKey);
+    // Extract pagination parameters
+    const { searchParams } = new URL(req.url);
+    const limit = parseInt(searchParams.get("limit") || "50", 10);
+    const offset = parseInt(searchParams.get("offset") || "0", 10);
 
-    if (cached) {
-        console.log(`[playlist-tracks] Cache HIT — returning ${cached.length} cached tracks`);
-        return NextResponse.json({ tracks: cached });
+    // Cache layer — module-level Map keyed by id, limit, and offset
+    const cacheKey = `${id}_${limit}_${offset}`;
+    const cachedEntry = localCache.get(cacheKey);
+
+    if (cachedEntry && Date.now() - cachedEntry.timestamp < CACHE_TTL_MS) {
+        console.log(`[playlist-tracks] Cache HIT (local) — returning paginated tracks for limit=${limit} offset=${offset}`);
+        return NextResponse.json(cachedEntry.data);
     }
 
-    console.log(`[playlist-tracks] Cache MISS — fetching from Spotify`);
+    console.log(`[playlist-tracks] Cache MISS (local) — fetching from Spotify for limit=${limit} offset=${offset}`);
 
     const headers = { Authorization: `Bearer ${session.accessToken}` };
-    const limit = 50;
+    const url = `https://api.spotify.com/v1/playlists/${id}/items?limit=${limit}&offset=${offset}`;
+    const res = await fetch(url, { headers });
 
-    // Fetch first page to get total count 
-    const firstUrl = `https://api.spotify.com/v1/playlists/${id}/items?limit=${limit}&offset=0`;
-    const firstRes = await fetch(firstUrl, { headers });
-
-    if (!firstRes.ok) {
-        const raw = await firstRes.json().catch(() => ({}));
-        return NextResponse.json({ error: "Spotify API error", status: firstRes.status, detail: raw }, { status: firstRes.status });
+    if (!res.ok) {
+        const raw = await res.json().catch(() => ({}));
+        return NextResponse.json({ error: "Spotify API error", status: res.status, detail: raw }, { status: res.status });
     }
 
-    const firstPage = (await firstRes.json()) as SpotifyItemsPage;
-    let allItems: SpotifyPlaylistItem[] = [...(firstPage.items ?? [])];
-
-    // Fetch remaining pages in parallel 
-    if (firstPage.next && firstPage.total > limit) {
-        const remainingPages = Math.ceil((firstPage.total - limit) / limit);
-        const offsets = Array.from({ length: remainingPages }, (_, i) => (i + 1) * limit);
-
-        const pages = await Promise.all(
-            offsets.map(async (offset) => {
-                const url = `https://api.spotify.com/v1/playlists/${id}/items?limit=${limit}&offset=${offset}`;
-                const res = await fetch(url, { headers });
-                if (!res.ok) return { items: [], next: null, total: 0 };
-                return res.json() as Promise<SpotifyItemsPage>;
-            })
-        );
-
-        for (const page of pages) {
-            allItems = allItems.concat(page.items ?? []);
-        }
-    }
-
-    console.log("[playlist-tracks] total items from Spotify:", allItems.length);
+    const page = (await res.json()) as SpotifyItemsPage;
+    const allItems: SpotifyPlaylistItem[] = page.items ?? [];
 
     // Map items → TrackData 
     let validCover = 0;
@@ -110,7 +97,6 @@ export async function GET(
         }
 
         // TYPE GUARD: skip podcast episodes — they have no .album field
-        // item.type is 'track' for songs, 'episode' for podcasts
         if (raw.type && raw.type !== "track") {
             console.warn(`[playlist-tracks] item[${i}] "${raw.name}" is type "${raw.type}" (not a track) — skipping`);
             skippedEpisode++;
@@ -146,11 +132,19 @@ export async function GET(
         });
     });
 
-    console.log(`[playlist-tracks] valid covers: ${validCover} | missing covers: ${missingCover} | skipped null: ${skippedNull} | skipped episodes: ${skippedEpisode} | final: ${tracks.length}`);
+    console.log(`[playlist-tracks] valid covers: ${validCover} | missing: ${missingCover} | null: ${skippedNull} | episodes: ${skippedEpisode} | final: ${tracks.length}`);
 
-    // Store in cache (TTL: 10 minutes) 
-    cache.set(cacheKey, tracks, TTL.PLAYLIST_TRACKS);
-    console.log(`[playlist-tracks] Cached ${tracks.length} tracks (TTL: ${TTL.PLAYLIST_TRACKS / 1000}s)`);
+    // Construct augmented response payload
+    const responsePayload = {
+        tracks,
+        total: page.total,
+        limit: page.limit || limit,
+        offset: page.offset || offset,
+        next: page.next
+    };
 
-    return NextResponse.json({ tracks });
+    // Store in internal cache
+    localCache.set(cacheKey, { data: responsePayload, timestamp: Date.now() });
+    
+    return NextResponse.json(responsePayload);
 }

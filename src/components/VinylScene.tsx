@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useRef, memo, Suspense } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -68,61 +68,83 @@ const WALL_WIDTH = 120;
 const WALL_HEIGHT = 70;
 const getCardSize = (trackCount: number) => Math.min(1.8 + (trackCount - 1) * 0.45, 4.2) * 2;
 
-const SPREAD_MULTIPLIER = 1.0; // Reduced spread base since collision detection will push them out naturally
-const generatePositions = (groups: AlbumGroup[]) => {
+const WALL_ASPECT = WALL_WIDTH / WALL_HEIGHT;
+const generatePositions = (newGroups: AlbumGroup[], existingPositions: any[]) => {
   const positions: { x: number, y: number, angle: number, scale: number, size: number }[] = [];
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
   const wallClamp = (x: number, y: number) => [
     Math.max(-WALL_WIDTH / 2 + 2, Math.min(WALL_WIDTH / 2 - 2, x)),
     Math.max(-WALL_HEIGHT / 2 + 2, Math.min(WALL_HEIGHT / 2 - 2, y)),
   ];
 
-  for (let i = 0; i < groups.length; i++) {
+  for (let i = 0; i < newGroups.length; i++) {
     const scale = 1.1 + (Math.random() - 0.5) * 0.12;
-    // Base size from getCardSize + a small margin
-    const size = getCardSize(groups[i].trackCount) * scale;
+    const size = getCardSize(newGroups[i].trackCount) * scale;
     
-    let rIdx = i;
-    let x = 0, y = 0, angle = 0;
     let collision = true;
-    let iterations = 0;
+    let placedX = 0, placedY = 0;
+    
+    const totalCount = existingPositions.length + i;
+    let r = Math.max(0, Math.floor(Math.sqrt((totalCount * 22) / (WALL_ASPECT * Math.PI))) - 1); 
+    const dr = 0.5; // Small outward step
+    let angleOffset = Math.random() * Math.PI * 2; // Randomize starting angle
 
-    // Push item outwards along its angle until it doesn't overlap
-    while (collision && iterations < 500) {
-      const radius = 18 * Math.sqrt(rIdx + 0.5) / Math.sqrt(groups.length);
-      angle = i * goldenAngle;
+    while (collision && r < 100) {
+      const perimeter = r === 0 ? 1 : 4 * r * (WALL_ASPECT + 1);
+      const numSamples = r === 0 ? 1 : Math.ceil(perimeter * 0.8);
       
-      x = radius * Math.cos(angle) * SPREAD_MULTIPLIER;
-      y = radius * Math.sin(angle) * SPREAD_MULTIPLIER;
+      let foundSpot = false;
       
-      let [clampedX, clampedY] = wallClamp(x, y);
-      
-      // If clamped, we test the clamped positions for collision
-      collision = false;
-      const margin = 0.8; // extra space between albums
-      
-      for (const p of positions) {
-        const dx = Math.abs(clampedX - p.x);
-        const dy = Math.abs(clampedY - p.y);
-        const minDistanceX = (size + p.size) / 2 + margin;
-        const minDistanceY = (size + p.size) / 2 + margin;
+      for (let s = 0; s < numSamples; s++) {
+        const theta = angleOffset + (s / numSamples) * Math.PI * 2;
         
-        if (dx < minDistanceX && dy < minDistanceY) {
-          collision = true;
+        let u = Math.cos(theta);
+        let v = Math.sin(theta);
+        const max = Math.max(Math.abs(u), Math.abs(v));
+        u /= max; // maps to a square profile [-1, 1]
+        v /= max;
+        
+        let x = r * WALL_ASPECT * u;
+        let y = r * v;
+        
+        let [clampedX, clampedY] = wallClamp(x, y);
+        
+        // Test collision against BOTH existing and newly generated items in this chunk
+        let tempCollision = false;
+        const margin = 0.8; // extra space between albums
+        
+        for (const p of [...existingPositions, ...positions]) {
+          const dx = Math.abs(clampedX - p.x);
+          const dy = Math.abs(clampedY - p.y);
+          const minDistanceX = (size + p.size) / 2 + margin;
+          const minDistanceY = (size + p.size) / 2 + margin;
+          
+          if (dx < minDistanceX && dy < minDistanceY) {
+            tempCollision = true;
+            break;
+          }
+        }
+        
+        if (!tempCollision) {
+          foundSpot = true;
+          placedX = clampedX;
+          placedY = clampedY;
+          collision = false;
           break;
         }
       }
       
-      if (collision) {
-        rIdx += 0.8; // move further out
-        iterations++;
-      } else {
-        x = clampedX;
-        y = clampedY;
+      if (!foundSpot) {
+        r += dr;
       }
     }
     
-    positions.push({ x, y, angle, scale, size });
+    // Fallback if we exceeded bounds (should be rare)
+    if (collision) {
+      placedX = (Math.random() - 0.5) * WALL_WIDTH;
+      placedY = (Math.random() - 0.5) * WALL_HEIGHT;
+    }
+
+    positions.push({ x: placedX, y: placedY, angle: 0, scale, size });
   }
   return positions;
 };
@@ -180,43 +202,85 @@ function CameraController({
 }
 
 // VinylScene
+const MemoizedAlbumCover = memo(AlbumCover);
+
 export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
-  const [tracks, setTracks] = useState<Track[]>([]);
+  const [albumGroups, setAlbumGroups] = useState<AlbumGroup[]>([]);
+  const [positions, setPositions] = useState<any[]>([]);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
   const controlsRef = useRef<OrbitControlsImpl>(null);
 
   useEffect(() => {
     if (!playlistId) return;
-    const load = async () => {
+    const controller = new AbortController();
+    let isMounted = true;
+
+    const loadData = async () => {
       try {
-        const res = await fetch(`/api/spotify/playlist-tracks/${playlistId}`);
-        if (!res.ok) throw new Error(String(res.status));
-        const data: { tracks: Track[] } = await res.json();
-        const groups = groupByAlbum(data.tracks);
-        console.log(`[VinylScene] ${groups.length} albums, ${data.tracks.length} tracks`);
-        setTracks(data.tracks);
-      } catch (err) {
-        console.error("[VinylScene] fetch error:", err);
+        let offset = 0;
+        let limit = 50;
+        let total = 1;
+        
+        setIsFetchingMore(true);
+        
+        let cumulativeGroups: AlbumGroup[] = [];
+        let cumulativePositions: any[] = [];
+        
+        while (offset < total && isMounted) {
+          const res = await fetch(`/api/spotify/playlist-tracks/${playlistId}?limit=${limit}&offset=${offset}`, { signal: controller.signal });
+          if (!res.ok) throw new Error(String(res.status));
+          
+          const data = await res.json();
+          total = data.total || 0;
+          limit = data.limit || 50;
+          
+          if (!data.tracks) break;
+
+          const existingIds = new Set(cumulativeGroups.map(g => g.albumId));
+          const chunkMap = new Map<string, AlbumGroup>();
+          
+          data.tracks.forEach((t: Track) => {
+            if (existingIds.has(t.albumId)) return;
+            if (chunkMap.has(t.albumId)) {
+              chunkMap.get(t.albumId)!.trackCount++;
+            } else {
+              chunkMap.set(t.albumId, { albumId: t.albumId, albumName: t.albumName, albumCoverUrl: t.albumCoverUrl, trackCount: 1 });
+            }
+          });
+          
+          // Sort new chunk groups to maintain aesthetic sizing prioritization for the chunk
+          const newGroups = Array.from(chunkMap.values()).sort((a,b) => b.trackCount - a.trackCount);
+          
+          if (newGroups.length > 0) {
+            const newPositions = generatePositions(newGroups, cumulativePositions);
+            cumulativeGroups = [...cumulativeGroups, ...newGroups];
+            cumulativePositions = [...cumulativePositions, ...newPositions];
+            
+            // Append securely to trigger React reconciler
+            setAlbumGroups(cumulativeGroups);
+            setPositions(cumulativePositions);
+          }
+          
+          offset += limit;
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.error("[VinylScene] fetch error:", err);
+        }
+      } finally {
+        if (isMounted) setIsFetchingMore(false);
       }
     };
-    void load();
+    
+    loadData();
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
   }, [playlistId]);
 
-  // groupByAlbum already sorts largest → smallest
-  const albumGroups = useMemo(() => groupByAlbum(tracks), [tracks]);
-  const positions = useMemo(
-    () => generatePositions(albumGroups),
-    [albumGroups],
-  );
-
-  // Log spread multiplier and card count on mount
-  useEffect(() => {
-    if (positions.length > 0) {
-      // eslint-disable-next-line no-console
-      console.log(`[VinylScene] spread multiplier: ${SPREAD_MULTIPLIER} | ${positions.length} cards placed | all upright (rotation: 0,0,0)`);
-    }
-  }, [positions.length]);
-
   return (
+    <>
     <Canvas
       style={{
         position: "fixed",
@@ -286,13 +350,15 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
             position={[x, y, 0.1]}
             rotation={[0, 0, 0]}
           >
-            <AlbumCover
-              albumCoverUrl={group.albumCoverUrl}
-              position={[0, 0, 0]}
-              trackCount={group.trackCount}
-              index={i}
-              scale={scale}
-            />
+            <Suspense fallback={null}>
+              <MemoizedAlbumCover
+                albumCoverUrl={group.albumCoverUrl}
+                position={[0, 0, 0]}
+                trackCount={group.trackCount}
+                index={i}
+                scale={scale}
+              />
+            </Suspense>
           </group>
         );
       })}
@@ -307,5 +373,23 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
         />
       </mesh>
     </Canvas>
+    {isFetchingMore && (
+      <div style={{
+        position: "absolute",
+        bottom: "20px",
+        right: "20px",
+        color: "white",
+        background: "rgba(0,0,0,0.6)",
+        padding: "8px 16px",
+        borderRadius: "8px",
+        fontFamily: "Inter, sans-serif",
+        fontSize: "14px",
+        pointerEvents: "none",
+        zIndex: 10
+      }}>
+        Loading remaining albums...
+      </div>
+    )}
+    </>
   );
 }
