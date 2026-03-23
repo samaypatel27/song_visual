@@ -82,13 +82,19 @@ export function AlbumCover({
     const isHovered = hoveredRef.current;
     const targetScale = (isHovered ? 1.1 : 1.0) * scale;
     const isTransitioning =
-      Math.abs(currentScaleRef.current - targetScale) > 0.001;
+      Math.abs(currentScaleRef.current - targetScale) > 0.001 || 
+      Math.abs(recordSlideRef.current - (isHovered ? 1 : 0)) > 0.005;
 
     // 2. Idle State Mathematics Silence
     if (!isHovered && !isTransitioning) {
       groupRef.current.scale.set(targetScale, targetScale, 1);
       groupRef.current.rotation.set(0, 0, 0); // Reset rotational static noise
       groupRef.current.position.set(position[0], position[1], position[2]); // Rest native
+      
+      recordSlideRef.current = 0;
+      if (recordTransformRef.current) {
+        recordTransformRef.current.position.x = 0;
+      }
 
       if (discGroupRef.current) {
         discGroupRef.current.visible = false;
@@ -143,10 +149,12 @@ export function AlbumCover({
       rightBevelRef.current.opacity = bevelOpacityRef.current;
 
     recordSlideRef.current +=
-      ((isHovered ? 0.08 : 0) - recordSlideRef.current) * 0.18;
+      ((isHovered ? 1 : 0) - recordSlideRef.current) * 0.12; // Slightly slower pulling-out effect
     if (recordTransformRef.current) {
+      // The disc starts at perfectly 0 (hidden exactly inside the sleeve) and slides out to the right. 
+      // Changed from 0.65 to 0.45 to make it pop out less:
       recordTransformRef.current.position.x =
-        cardSize / 2 + cardSize * 0.44 * 0.1 + recordSlideRef.current;
+        (cardSize * 0.55) * recordSlideRef.current;
     }
   });
 
@@ -220,7 +228,7 @@ export function AlbumCover({
       <group ref={discGroupRef} frustumCulled={true}>
         <group
           ref={recordTransformRef}
-          position={[cardSize / 2 + cardSize * 0.44 * 0.1, 0, cardDepth * 0.3]}
+          position={[0, 0, cardDepth * 0.3]}
           frustumCulled={true}
         >
           <mesh rotation={[Math.PI / 2, 0, 0]} frustumCulled={true}>
