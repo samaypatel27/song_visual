@@ -1,4 +1,5 @@
 {
+  "/_not-found/page": "app/_not-found/page.js",
   "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
   "/api/spotify/playlists/route": "app/api/spotify/playlists/route.js",
   "/api/spotify/playlist-tracks/[id]/route": "app/api/spotify/playlist-tracks/[id]/route.js",
