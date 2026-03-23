@@ -209,6 +209,7 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
   const [positions, setPositions] = useState<any[]>([]);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const controlsRef = useRef<OrbitControlsImpl>(null);
+  const [expandedAlbumId, setExpandedAlbumId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!playlistId) return;
@@ -344,24 +345,55 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
       {/* One disc per unique album, sorted largest → smallest (centre → outskirts) */}
       {albumGroups.map((group, i) => {
         const { x, y, scale } = positions[i] || { x: 0, y: 0, scale: 1 };
+        const isExpanded = expandedAlbumId === group.albumId;
+        const isBlurred = expandedAlbumId !== null && expandedAlbumId !== group.albumId;
         return (
           <group
             key={group.albumId}
             position={[x, y, 0.1]}
             rotation={[0, 0, 0]}
           >
-            <Suspense fallback={null}>
-              <MemoizedAlbumCover
-                albumCoverUrl={group.albumCoverUrl}
-                position={[0, 0, 0]}
-                trackCount={group.trackCount}
-                index={i}
-                scale={scale}
-              />
-            </Suspense>
+            <AlbumCover
+              albumCoverUrl={group.albumCoverUrl}
+              position={[0, 0, 0]}
+              trackCount={group.trackCount}
+              index={i}
+              scale={scale}
+              isExpanded={isExpanded}
+              isBlurred={isBlurred}
+              albumName={group.albumName}
+              onExpand={() => {
+                setExpandedAlbumId(isExpanded ? null : group.albumId);
+              }}
+            />
           </group>
         );
       })}
+
+      {/* Collapse on background click or Escape */}
+      <mesh
+        position={[0, 0, 0]}
+        visible={!!expandedAlbumId}
+        onPointerDown={() => setExpandedAlbumId(null)}
+      >
+        <planeGeometry args={[WALL_WIDTH, WALL_HEIGHT]} />
+        <meshBasicMaterial transparent opacity={0} />
+      </mesh>
+
+      {/* Collapse on Escape key */}
+      {expandedAlbumId && (
+        <primitive
+          object={{}}
+          attach={null}
+          onUpdate={() => {
+            const handler = (e: KeyboardEvent) => {
+              if (e.key === "Escape") setExpandedAlbumId(null);
+            };
+            window.addEventListener("keydown", handler);
+            return () => window.removeEventListener("keydown", handler);
+          }}
+        />
+      )}
 
       {/* WALL — customize color/texture/material here  */}
       <mesh position={[0, 0, -3]}>
