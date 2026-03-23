@@ -1,35 +1,5 @@
 import { useRef, useState, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
-import { useTexture } from "@react-three/drei";
-import * as THREE from "three";
-
-const getCardSize = (trackCount: number) => Math.min(1.8 + (trackCount - 1) * 0.45, 4.2) * 2;
-
-export interface AlbumCoverProps {
-  albumCoverUrl: string;
-  position: [number, number, number];
-  trackCount: number;
-  index: number;
-  scale?: number;
-  isExpanded?: boolean;
-  isBlurred?: boolean;
-  albumName?: string;
-  onExpand?: () => void;
-}
-
-export function AlbumCover({ albumCoverUrl, position, trackCount, index, scale = 1, isExpanded = false, isBlurred = false, albumName, onExpand }: AlbumCoverProps) {
-  const groupRef = useRef<THREE.Group>(null);
-  const discGroupRef = useRef<THREE.Group>(null);
-  const [hovered, setHovered] = useState(false);
-  const [currentPos, setCurrentPos] = useState<[number, number, number]>(position);
-  const [currentScale, setCurrentScale] = useState(scale);
-  const [currentRotY, setCurrentRotY] = useState(0);
-  const [bevelOpacity, setBevelOpacity] = useState(0.12);
-  const [topBevelOpacity, setTopBevelOpacity] = useState(0.18);
-  const [recordSlide, setRecordSlide] = useState(0);
-  const [discSpin, setDiscSpin] = useState(0);
-  const [discVisible, setDiscVisible] = useState(false);
-  const [discScale, setDiscScale] = useState(1.0);
   const cardSize = getCardSize(trackCount);
   const cardDepth = 0.22;
   const borderInset = 0.04 * cardSize;
@@ -249,12 +219,17 @@ const _frustum = new THREE.Frustum();
 const _projScreenMatrix = new THREE.Matrix4();
 const _sphere = new THREE.Sphere();
 
+
 export interface AlbumCoverProps {
   albumCoverUrl: string;
   position: [number, number, number];
   trackCount: number;
   index: number;
   scale?: number;
+  isExpanded?: boolean;
+  isBlurred?: boolean;
+  albumName?: string;
+  onExpand?: () => void;
 }
 
 <<<<<<< HEAD
@@ -289,7 +264,7 @@ export function AlbumCover({
 
 =======
 
-export function AlbumCover({ albumCoverUrl, position, trackCount, index, scale = 1, isExpanded = false, isBlurred = false, albumName, onExpand }: AlbumCoverProps & { isExpanded?: boolean, isBlurred?: boolean, albumName?: string, onExpand?: () => void }) {
+export function AlbumCover({ albumCoverUrl, position, trackCount, index, scale = 1, isExpanded = false, isBlurred = false, albumName, onExpand }: AlbumCoverProps) {
   const groupRef = useRef<THREE.Group>(null);
   const discGroupRef = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
