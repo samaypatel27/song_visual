@@ -68,26 +68,61 @@ const WALL_WIDTH = 120;
 const WALL_HEIGHT = 70;
 const getCardSize = (trackCount: number) => Math.min(1.8 + (trackCount - 1) * 0.45, 4.2) * 2;
 
-// Original golden spiral layout for vinyl discs (restored)
-const SPREAD_MULTIPLIER = 2.1;
+const SPREAD_MULTIPLIER = 1.0; // Reduced spread base since collision detection will push them out naturally
 const generatePositions = (groups: AlbumGroup[]) => {
-  const positions = [];
+  const positions: { x: number, y: number, angle: number, scale: number, size: number }[] = [];
   const goldenAngle = Math.PI * (3 - Math.sqrt(5));
   const wallClamp = (x: number, y: number) => [
     Math.max(-WALL_WIDTH / 2 + 2, Math.min(WALL_WIDTH / 2 - 2, x)),
     Math.max(-WALL_HEIGHT / 2 + 2, Math.min(WALL_HEIGHT / 2 - 2, y)),
   ];
+
   for (let i = 0; i < groups.length; i++) {
-    const radius = 18 * Math.sqrt(i + 0.5) / Math.sqrt(groups.length);
-    const angle = i * goldenAngle;
-    let x = radius * Math.cos(angle);
-    let y = radius * Math.sin(angle);
-    // Double the spread
-    x *= SPREAD_MULTIPLIER;
-    y *= SPREAD_MULTIPLIER;
-    [x, y] = wallClamp(x, y);
     const scale = 1.1 + (Math.random() - 0.5) * 0.12;
-    positions.push({ x, y, angle, scale });
+    // Base size from getCardSize + a small margin
+    const size = getCardSize(groups[i].trackCount) * scale;
+    
+    let rIdx = i;
+    let x = 0, y = 0, angle = 0;
+    let collision = true;
+    let iterations = 0;
+
+    // Push item outwards along its angle until it doesn't overlap
+    while (collision && iterations < 500) {
+      const radius = 18 * Math.sqrt(rIdx + 0.5) / Math.sqrt(groups.length);
+      angle = i * goldenAngle;
+      
+      x = radius * Math.cos(angle) * SPREAD_MULTIPLIER;
+      y = radius * Math.sin(angle) * SPREAD_MULTIPLIER;
+      
+      let [clampedX, clampedY] = wallClamp(x, y);
+      
+      // If clamped, we test the clamped positions for collision
+      collision = false;
+      const margin = 0.8; // extra space between albums
+      
+      for (const p of positions) {
+        const dx = Math.abs(clampedX - p.x);
+        const dy = Math.abs(clampedY - p.y);
+        const minDistanceX = (size + p.size) / 2 + margin;
+        const minDistanceY = (size + p.size) / 2 + margin;
+        
+        if (dx < minDistanceX && dy < minDistanceY) {
+          collision = true;
+          break;
+        }
+      }
+      
+      if (collision) {
+        rIdx += 0.8; // move further out
+        iterations++;
+      } else {
+        x = clampedX;
+        y = clampedY;
+      }
+    }
+    
+    positions.push({ x, y, angle, scale, size });
   }
   return positions;
 };
@@ -244,7 +279,6 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
             key={group.albumId}
             position={[x, y, 0.1]}
             rotation={[0, 0, 0]}
-            scale={scale}
           >
             <AlbumCover
               albumCoverUrl={group.albumCoverUrl}
