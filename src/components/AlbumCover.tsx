@@ -25,23 +25,41 @@ export interface AlbumCoverProps {
 }
 
 
-export function AlbumCover({ albumCoverUrl, position, trackCount, index, scale = 1 }: AlbumCoverProps) {
+export function AlbumCover({ albumCoverUrl, position, trackCount, index, scale = 1, isExpanded = false, isBlurred = false, albumName, onExpand }: AlbumCoverProps & { isExpanded?: boolean, isBlurred?: boolean, albumName?: string, onExpand?: () => void }) {
   const groupRef = useRef<THREE.Group>(null);
   const discGroupRef = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
-  const cardSize = getCardSize(trackCount);
-  const cardDepth = 0.22;
-  const borderInset = 0.04 * cardSize; // 4% inset
-  const borderThickness = 0.015; // ~1.5px at world scale
-  const shadowOffset = [0, 0, -0.02]; // for AO shadow
-  const wallColor = "#d0cfc8"; // match wall background for corner mask
-
-  // For bevel highlight animation
+  const [currentPos, setCurrentPos] = useState<[number, number, number]>(position);
+  const [currentScale, setCurrentScale] = useState(scale);
+  const [currentRotY, setCurrentRotY] = useState(0);
+  const [currentZ, setCurrentZ] = useState(position[2]);
   const [bevelOpacity, setBevelOpacity] = useState(0.12);
   const [topBevelOpacity, setTopBevelOpacity] = useState(0.18);
-  // For record slide animation
   const [recordSlide, setRecordSlide] = useState(0);
-
+  const [discSpin, setDiscSpin] = useState(0);
+  const [discVisible, setDiscVisible] = useState(false);
+  const [discScale, setDiscScale] = useState(1.0);
+  const cardSize = getCardSize(trackCount);
+  const cardDepth = 0.22;
+  const borderInset = 0.04 * cardSize;
+  const shadowOffset = [0, 0, -0.02];
+  const wallColor = "#d0cfc8";
+  const cameraZ = 22;
+  const sleeveZ = 4.0;
+  const discZ = 3.7;
+  const fov = 70 * Math.PI / 180;
+  const aspect = window.innerWidth / window.innerHeight;
+  const visibleHeight = 2 * Math.tan(fov / 2) * (cameraZ - sleeveZ);
+  const visibleWidth = visibleHeight * aspect;
+  const baseSleeveWidth = cardSize; // at scale 1.0
+  const targetSleeveWorldWidth = visibleWidth * 0.38;
+  const expandedScale = targetSleeveWorldWidth / baseSleeveWidth;
+  const expandedTarget = [(-visibleWidth / 3), 0, sleeveZ];
+  const collapsedTarget = [position[0], position[1], position[2]];
+  const expandedRotY = -0.22;
+  const collapsedRotY = 0;
+  const expandedDiscX = targetSleeveWorldWidth * 0.75;
+  const collapsedDiscX = targetSleeveWorldWidth * 0.1;
   // Album art texture
   const albumTexture = useTexture(albumCoverUrl);
   albumTexture.colorSpace = THREE.SRGBColorSpace;
@@ -49,31 +67,49 @@ export function AlbumCover({ albumCoverUrl, position, trackCount, index, scale =
   albumTexture.magFilter = THREE.LinearFilter;
 
   // Animation
-  useFrame(({ clock }) => {
-    if (!groupRef.current) return;
-    const t = clock.getElapsedTime();
-    const phase = index * GOLDEN;
-    // Jiggle: Z rotation (no static tilt)
-    const jiggleAmp = hovered ? (Math.PI / 180) * 8 : (Math.PI / 180) * 4;
-    const microAmp = hovered ? (Math.PI / 180) * 2 : (Math.PI / 180) * 1;
-    const jiggle = Math.sin((t + phase) * JIGGLE_FREQ * 2 * Math.PI) * jiggleAmp;
-    const micro = Math.sin((t + phase * 0.7) * MICRO_FREQ * 2 * Math.PI) * microAmp;
-    const floatY = Math.sin((t + phase * 0.3) * FLOAT_FREQ * 2 * Math.PI) * 0.1;
-    // Scale
-    const targetScale = (hovered ? 1.1 : 1.0) * scale;
-    groupRef.current.scale.lerp(new THREE.Vector3(targetScale, targetScale, 1), 0.18);
-    // Rotation — always upright, only animated Z
-    groupRef.current.rotation.set(0, 0, jiggle + micro);
-    // Position
-    groupRef.current.position.set(position[0], position[1] + floatY, position[2]);
+  useFrame(() => {
+    // Animate position, scale, rotation, Z
+    const targetPos = isExpanded ? expandedTarget : collapsedTarget;
+    const targetScale = isExpanded ? expandedScale : scale;
+    const targetRotY = isExpanded ? expandedRotY : collapsedRotY;
+    const targetZ = isExpanded ? sleeveZ : position[2];
+    setCurrentPos(prev => [
+      prev[0] + (targetPos[0] - prev[0]) * 0.08,
+      prev[1] + (targetPos[1] - prev[1]) * 0.08,
+      prev[2] + (targetZ - prev[2]) * 0.08,
+    ]);
+    setCurrentScale(prev => prev + (targetScale - prev) * 0.08);
+    setCurrentRotY(prev => prev + (targetRotY - prev) * 0.08);
     // Animate bevel highlight
     setBevelOpacity((prev) => prev + ((hovered ? 0.22 : 0.12) - prev) * 0.18);
     setTopBevelOpacity((prev) => prev + ((hovered ? 0.28 : 0.18) - prev) * 0.18);
-    // Animate record slide
-    setRecordSlide((prev) => prev + ((hovered ? 0.08 : 0) - prev) * 0.18);
-    // Hide disc in idle state
+    // Disc slide-out logic
+    const distToTarget = Math.sqrt(
+      Math.pow(currentPos[0] - expandedTarget[0], 2) +
+      Math.pow(currentPos[1] - expandedTarget[1], 2) +
+      Math.pow(currentPos[2] - expandedTarget[2], 2)
+    );
+    if (isExpanded && distToTarget < 0.15) {
+      setDiscVisible(true);
+      setRecordSlide(prev => prev + (expandedDiscX - prev) * 0.12);
+      setDiscScale(prev => prev + (1.12 - prev) * 0.09);
+      setDiscSpin(prev => prev + 0.009);
+    } else {
+      setRecordSlide(prev => prev + (collapsedDiscX - prev) * 0.12);
+      setDiscScale(prev => prev + (1.0 - prev) * 0.09);
+      setDiscSpin(prev => prev + 0.003);
+      if (!isExpanded && Math.abs(recordSlide - collapsedDiscX) < 0.1) {
+        setDiscVisible(false);
+      }
+    }
+    // Hide disc in idle/collapsed state
     if (discGroupRef.current) {
-      discGroupRef.current.visible = false;
+      discGroupRef.current.visible = discVisible;
+    }
+    // Log expanded state
+    if (isExpanded && albumName) {
+      // eslint-disable-next-line no-console
+      console.log(`[AlbumCover] expanded | targetX: ${(-visibleWidth / 3).toFixed(2)} | targetScale: ${expandedScale.toFixed(2)} | visibleWidth: ${visibleWidth.toFixed(2)}`);
     }
   });
 
@@ -92,6 +128,10 @@ export function AlbumCover({ albumCoverUrl, position, trackCount, index, scale =
     setHovered(false);
     document.body.style.cursor = "default";
   };
+  const handleClick = (e: any) => {
+    e.stopPropagation();
+    if (onExpand) onExpand();
+  };
 
   // Materials
   const frontMaterial = new THREE.MeshStandardMaterial({
@@ -107,6 +147,16 @@ export function AlbumCover({ albumCoverUrl, position, trackCount, index, scale =
     metalness: 0.0,
     side: THREE.BackSide,
   });
+  const leftSpineMaterial = new THREE.MeshStandardMaterial({
+    color: "#1a1a1a",
+    roughness: 0.6,
+    metalness: 0.1,
+  });
+  const spineEdgeMaterial = new THREE.MeshStandardMaterial({
+    color: "#3a3a3a",
+    roughness: 0.2,
+    metalness: 0.2,
+  });
   const leftRightTopMaterial = new THREE.MeshStandardMaterial({
     color: "#2a2a2a",
     roughness: 0.7,
@@ -119,15 +169,21 @@ export function AlbumCover({ albumCoverUrl, position, trackCount, index, scale =
   });
   const materials = [
     leftRightTopMaterial, // right
-    leftRightTopMaterial, // left
+    leftSpineMaterial,    // left (spine)
     leftRightTopMaterial, // top
-    bottomMaterial, // bottom
-    frontMaterial, // front
-    backMaterial, // back
+    bottomMaterial,       // bottom
+    frontMaterial,        // front
+    backMaterial,         // back
   ];
 
   return (
-    <group ref={groupRef}>
+    <group
+      ref={groupRef}
+      position={currentPos}
+      scale={currentScale}
+      rotation={[0, currentRotY, 0]}
+      onClick={handleClick}
+    >
       {/* Ambient occlusion shadow at wall contact */}
       <mesh position={[0, 0, shadowOffset[2]]}>
         <planeGeometry args={[cardSize * 1.08, cardSize * 1.08]} />
