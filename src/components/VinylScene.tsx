@@ -249,15 +249,21 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
         dampingFactor={0.06}
         enableZoom
         enablePan
-        enableRotate = {false}
-        screenSpacePanning = {true}
-        mouseButtons={
-            {
-                LEFT: THREE.MOUSE.PAN, 
-                MIDDLE: THREE.MOUSE.DOLLY, 
-                RIGHT: THREE.MOUSE.ROTATE
-            }
-        }
+        enableRotate={false}
+        minAzimuthAngle={0}
+        maxAzimuthAngle={0}
+        minPolarAngle={Math.PI / 2}
+        maxPolarAngle={Math.PI / 2}
+        screenSpacePanning={true}
+        mouseButtons={{
+          LEFT: THREE.MOUSE.PAN,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.PAN,
+        }}
+        touches={{
+          ONE: THREE.TOUCH.PAN,
+          TWO: THREE.TOUCH.DOLLY_PAN,
+        }}
         panSpeed={0.8}
         zoomSpeed={0.8}
         minDistance={8}
