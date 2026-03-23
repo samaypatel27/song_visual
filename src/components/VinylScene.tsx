@@ -6,6 +6,7 @@ import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import * as THREE from "three";
 import { VinylRecord } from "./VinylRecord";
+import { AlbumCover } from "./AlbumCover";
 
 // TYPES
 interface Track {
@@ -60,80 +61,34 @@ export const getDiscRadius = (trackCount: number): number =>
  * Scene visible bounds at fov=70, camera z=22: approx ±18x, ±10y.
  * 20% edge margin → usable: ±13x, ±7.2y.
  */
-const generatePositions = (
-  groups: AlbumGroup[],
-): [number, number, number][] => {
-  const positions: [number, number, number][] = [];
-  const radii: number[] = [];
-  const n = groups.length;
-  const maxAttempts = 120;
 
-  groups.forEach((group, i) => {
-    const r = getDiscRadius(group.trackCount);
-    // progress 0 = largest disc, 1 = smallest
-    const progress = n <= 1 ? 0.5 : i / (n - 1);
+// Card size helper (same as AlbumCover)
 
-    // Placement zone grows from center outward as discs get smaller.
-    // Largest disc: ±5x, ±3y → smallest disc: ±13x, ±7.2y
-    const xRange = 5 + progress * 8;
-    const yRange = 3 + progress * 4.2;
+const WALL_WIDTH = 120;
+const WALL_HEIGHT = 70;
+const getCardSize = (trackCount: number) => Math.min(1.8 + (trackCount - 1) * 0.45, 4.2) * 2;
 
-    let placed = false;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const seed = i * 1000 + attempt;
-      // Map sin output [-1,1] → [0,1] then scale to placement zone
-      const x = (Math.sin(seed * 127.1) * 0.5 + 0.5) * 2 * xRange - xRange;
-      const y = (Math.sin(seed * 311.7) * 0.5 + 0.5) * 2 * yRange - yRange;
-      const z = 0;
-
-      // Enforce minimum gap = sum of both radii + 1.5 unit padding
-      const tooClose = positions.some((pos, j) => {
-        const dx = pos[0] - x;
-        const dy = pos[1] - y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        return dist < radii[j] + r + 1.5;
-      });
-
-      if (!tooClose) {
-        positions.push([x, y, z]);
-        radii.push(r);
-        placed = true;
-        break;
-      }
-    }
-
-    if (!placed) {
-      // Fallback: overlap-aware spiral — expand outward until a clear spot is found
-      const baseAngle = i * 2.399; // golden angle keeps starting directions spread out
-      let spiralDist = r * 2;
-      outer: while (spiralDist < 80) {
-        for (let a = 0; a < Math.PI * 2; a += 0.25) {
-          const fx = Math.cos(baseAngle + a) * spiralDist;
-          const fy = Math.sin(baseAngle + a) * spiralDist;
-          const tooClose = positions.some((pos, j) => {
-            const dx = pos[0] - fx;
-            const dy = pos[1] - fy;
-            return Math.sqrt(dx * dx + dy * dy) < radii[j] + r + 0.5;
-          });
-          if (!tooClose) {
-            positions.push([fx, fy, 0]);
-            radii.push(r);
-            placed = true;
-            break outer;
-          }
-        }
-        spiralDist += r * 0.8;
-      }
-      if (!placed) {
-        // Absolute last resort — push far out, accept potential overlap
-        positions.push([Math.cos(i * 2.399) * 80, Math.sin(i * 2.399) * 80, 0]);
-        radii.push(r);
-        console.warn(`[VinylScene] "${group.albumName}" could not be placed without overlap`);
-      }
-    }
-  });
-
+// Original golden spiral layout for vinyl discs (restored)
+const SPREAD_MULTIPLIER = 2.1;
+const generatePositions = (groups: AlbumGroup[]) => {
+  const positions = [];
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  const wallClamp = (x: number, y: number) => [
+    Math.max(-WALL_WIDTH / 2 + 2, Math.min(WALL_WIDTH / 2 - 2, x)),
+    Math.max(-WALL_HEIGHT / 2 + 2, Math.min(WALL_HEIGHT / 2 - 2, y)),
+  ];
+  for (let i = 0; i < groups.length; i++) {
+    const radius = 18 * Math.sqrt(i + 0.5) / Math.sqrt(groups.length);
+    const angle = i * goldenAngle;
+    let x = radius * Math.cos(angle);
+    let y = radius * Math.sin(angle);
+    // Double the spread
+    x *= SPREAD_MULTIPLIER;
+    y *= SPREAD_MULTIPLIER;
+    [x, y] = wallClamp(x, y);
+    const scale = 1.1 + (Math.random() - 0.5) * 0.12;
+    positions.push({ x, y, angle, scale });
+  }
   return positions;
 };
 
@@ -218,6 +173,14 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
     [albumGroups],
   );
 
+  // Log spread multiplier and card count on mount
+  useEffect(() => {
+    if (positions.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log(`[VinylScene] spread multiplier: ${SPREAD_MULTIPLIER} | ${positions.length} cards placed | all upright (rotation: 0,0,0)`);
+    }
+  }, [positions.length]);
+
   return (
     <Canvas
       style={{
@@ -274,14 +237,25 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
       />
 
       {/* One disc per unique album, sorted largest → smallest (centre → outskirts) */}
-      {albumGroups.map((group, i) => (
-        <VinylRecord
-          key={group.albumId}
-          albumCoverUrl={group.albumCoverUrl}
-          position={positions[i] ?? [0, 0, 0]}
-          radius={getDiscRadius(group.trackCount)}
-        />
-      ))}
+      {albumGroups.map((group, i) => {
+        const { x, y, scale } = positions[i] || { x: 0, y: 0, scale: 1 };
+        return (
+          <group
+            key={group.albumId}
+            position={[x, y, 0.1]}
+            rotation={[0, 0, 0]}
+            scale={scale}
+          >
+            <AlbumCover
+              albumCoverUrl={group.albumCoverUrl}
+              position={[0, 0, 0]}
+              trackCount={group.trackCount}
+              index={i}
+              scale={scale}
+            />
+          </group>
+        );
+      })}
 
       {/* WALL — customize color/texture/material here  */}
       <mesh position={[0, 0, -3]}>
