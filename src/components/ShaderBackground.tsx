@@ -7,7 +7,7 @@ import * as THREE from "three";
 // VERTEX SHADER
 // Passes clip-space position straight through.  The geometry is already a
 // PlaneGeometry(2, 2) which lives in [-1, 1] clip space, so no projection
-// transform is needed.
+// transform is needed. hi
 // ─────────────────────────────────────────────────────────────────────────────
 const vertexShader = /* glsl */ `
   void main() {
