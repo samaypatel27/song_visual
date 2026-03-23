@@ -36,14 +36,6 @@
       "static/chunks/main-app-02969ad0bca05e11.js",
       "static/chunks/app/api/spotify/playlist-tracks/[id]/route-ddc204e57cc79bfe.js"
     ],
-    "/page": [
-      "static/chunks/webpack-e4855d7284083c0f.js",
-      "static/chunks/4bd1b696-8a11ac25f36ead0d.js",
-      "static/chunks/684-d918f190a3c1bb97.js",
-      "static/chunks/main-app-02969ad0bca05e11.js",
-      "static/chunks/108-6fd10ffb5cd15049.js",
-      "static/chunks/app/page-b65c5fbefbe70bdf.js"
-    ],
     "/dashboard/page": [
       "static/chunks/webpack-e4855d7284083c0f.js",
       "static/chunks/4bd1b696-8a11ac25f36ead0d.js",
@@ -61,7 +53,15 @@
       "static/chunks/bd904a5c-e3235fcb8d1242f5.js",
       "static/chunks/51749ec1-3b2249b363378f84.js",
       "static/chunks/544-fa3cbee0e204cc24.js",
-      "static/chunks/app/playlist/[id]/page-c38bff18144fbe43.js"
+      "static/chunks/app/playlist/[id]/page-67a1a3741351dc8e.js"
+    ],
+    "/page": [
+      "static/chunks/webpack-e4855d7284083c0f.js",
+      "static/chunks/4bd1b696-8a11ac25f36ead0d.js",
+      "static/chunks/684-d918f190a3c1bb97.js",
+      "static/chunks/main-app-02969ad0bca05e11.js",
+      "static/chunks/108-6fd10ffb5cd15049.js",
+      "static/chunks/app/page-b65c5fbefbe70bdf.js"
     ]
   }
 }

@@ -69,6 +69,7 @@ const WALL_HEIGHT = 70;
 const getCardSize = (trackCount: number) => Math.min(1.8 + (trackCount - 1) * 0.45, 4.2) * 2;
 
 // Original golden spiral layout for vinyl discs (restored)
+const SPREAD_MULTIPLIER = 2.1;
 const generatePositions = (groups: AlbumGroup[]) => {
   const positions = [];
   const goldenAngle = Math.PI * (3 - Math.sqrt(5));
@@ -81,12 +82,12 @@ const generatePositions = (groups: AlbumGroup[]) => {
     const angle = i * goldenAngle;
     let x = radius * Math.cos(angle);
     let y = radius * Math.sin(angle);
+    // Double the spread
+    x *= SPREAD_MULTIPLIER;
+    y *= SPREAD_MULTIPLIER;
     [x, y] = wallClamp(x, y);
-    const yRotation = (Math.random() - 0.5) * 0.5;
     const scale = 1.1 + (Math.random() - 0.5) * 0.12;
-    positions.push({ x, y, angle, yRotation, scale });
-    // eslint-disable-next-line no-console
-    console.log(`AlbumCover #${i}: x=${x.toFixed(2)}, y=${y.toFixed(2)}, angle=${angle.toFixed(2)}, yRot=${yRotation.toFixed(2)}, scale=${scale.toFixed(2)}`);
+    positions.push({ x, y, angle, scale });
   }
   return positions;
 };
@@ -172,6 +173,14 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
     [albumGroups],
   );
 
+  // Log spread multiplier and card count on mount
+  useEffect(() => {
+    if (positions.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log(`[VinylScene] spread multiplier: ${SPREAD_MULTIPLIER} | ${positions.length} cards placed | all upright (rotation: 0,0,0)`);
+    }
+  }, [positions.length]);
+
   return (
     <Canvas
       style={{
@@ -229,12 +238,12 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
 
       {/* One disc per unique album, sorted largest → smallest (centre → outskirts) */}
       {albumGroups.map((group, i) => {
-        const { x, y, angle, yRotation, scale } = positions[i] || { x: 0, y: 0, angle: 0, yRotation: 0, scale: 1 };
+        const { x, y, scale } = positions[i] || { x: 0, y: 0, scale: 1 };
         return (
           <group
             key={group.albumId}
             position={[x, y, 0.1]}
-            rotation={[0, yRotation, angle]}
+            rotation={[0, 0, 0]}
             scale={scale}
           >
             <AlbumCover

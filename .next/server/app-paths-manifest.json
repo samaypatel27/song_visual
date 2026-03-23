@@ -3,7 +3,7 @@
   "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
   "/api/spotify/playlists/route": "app/api/spotify/playlists/route.js",
   "/api/spotify/playlist-tracks/[id]/route": "app/api/spotify/playlist-tracks/[id]/route.js",
-  "/page": "app/page.js",
   "/dashboard/page": "app/dashboard/page.js",
-  "/playlist/[id]/page": "app/playlist/[id]/page.js"
+  "/playlist/[id]/page": "app/playlist/[id]/page.js",
+  "/page": "app/page.js"
 }

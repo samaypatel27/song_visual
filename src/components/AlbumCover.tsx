@@ -8,11 +8,7 @@ import * as THREE from "three";
 // Sizing logic: use the same as getDiscRadius
 const getCardSize = (trackCount: number) => Math.min(1.8 + (trackCount - 1) * 0.45, 4.2) * 2; // diameter to square side
 
-// Helper for deterministic random tilt per index
-function getRandomTilt(index: number) {
-  // -8 to +8 degrees, deterministic
-  return (Math.sin(index * 127.1) * 0.5 + 0.5) * 16 - 8;
-}
+// No static random tilt for album covers — all upright
 
 // Animation frequencies (incommensurable)
 const JIGGLE_FREQ = 1 / 3; // ~3s
@@ -55,8 +51,7 @@ export function AlbumCover({ albumCoverUrl, position, trackCount, index, scale =
     if (!groupRef.current) return;
     const t = clock.getElapsedTime();
     const phase = index * GOLDEN;
-    // Jiggle: Z rotation
-    const baseTilt = getRandomTilt(index) * (Math.PI / 180);
+    // Jiggle: Z rotation (no static tilt)
     const jiggleAmp = hovered ? (Math.PI / 180) * 8 : (Math.PI / 180) * 4;
     const microAmp = hovered ? (Math.PI / 180) * 2 : (Math.PI / 180) * 1;
     const jiggle = Math.sin((t + phase) * JIGGLE_FREQ * 2 * Math.PI) * jiggleAmp;
@@ -65,8 +60,8 @@ export function AlbumCover({ albumCoverUrl, position, trackCount, index, scale =
     // Scale
     const targetScale = (hovered ? 1.1 : 1.0) * scale;
     groupRef.current.scale.lerp(new THREE.Vector3(targetScale, targetScale, 1), 0.18);
-    // Rotation
-    groupRef.current.rotation.set(0, 0, baseTilt + jiggle + micro);
+    // Rotation — always upright, only animated Z
+    groupRef.current.rotation.set(0, 0, jiggle + micro);
     // Position
     groupRef.current.position.set(position[0], position[1] + floatY, position[2]);
     // Animate bevel highlight
