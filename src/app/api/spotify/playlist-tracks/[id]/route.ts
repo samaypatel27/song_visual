@@ -19,8 +19,8 @@ interface SpotifyImage {
 }
 
 interface SpotifyPlaylistItem {
-    item: { type?: string; id?: string; name?: string; album?: { id?: string; name?: string; images?: SpotifyImage[] } } | null;
-    track: { type?: string; id?: string; name?: string; album?: { id?: string; name?: string; images?: SpotifyImage[] } } | null;
+    item: { type?: string; id?: string; name?: string; duration_ms?: number; track_number?: number; album?: { id?: string; name?: string; images?: SpotifyImage[] } } | null;
+    track: { type?: string; id?: string; name?: string; duration_ms?: number; track_number?: number; album?: { id?: string; name?: string; images?: SpotifyImage[] } } | null;
 }
 
 interface SpotifyItemsPage {
@@ -37,6 +37,8 @@ export interface TrackData {
     albumId: string;
     albumName: string;
     albumCoverUrl: string;
+    trackNumber: number;
+    durationMs: number;
 }
 
 export async function GET(
@@ -129,6 +131,8 @@ export async function GET(
             albumId: raw.album.id ?? "",
             albumName: raw.album.name ?? "",
             albumCoverUrl: coverUrl,
+            trackNumber: raw.track_number ?? 0,
+            durationMs: raw.duration_ms ?? 0,
         });
     });
 

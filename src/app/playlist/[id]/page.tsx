@@ -3,18 +3,22 @@
 // Layer order (z-index):
 //   0 — GLSL shader background   (ShaderBackground, position:fixed)
 //   1 — 3D vinyl records          (VinylScene, transparent R3F Canvas, position:fixed)
-//   10 — D-pad navigation overlay (DPadControls, position:fixed, bottom-right)
+//   10 — TrackListPanel           (position:fixed, right third)
+//   20 — D-pad navigation overlay (DPadControls, position:fixed, bottom-right)
 //
-// pressedDirection ref is created here and passed to BOTH VinylScene (reads it
-// in useFrame to move the camera) and DPadControls (writes to it on pointer events).
-// Using a ref avoids re-renders on every button press.
+// Track data pipeline:
+//   VinylScene accumulates {trackNumber, trackName, durationMs} per album in a ref
+//   as playlist-tracks pages are fetched.  On click, onAlbumExpand fires with that
+//   in-memory array → NO secondary Spotify API call needed.
 
 "use client";
 
-import { useRef } from "react";
+import { use, useRef, useState, useCallback } from "react";
 import { ShaderBackground } from "@/components/ShaderBackground";
-import { VinylScene } from "@/components/VinylScene";
+import { VinylScene, type PlaylistTrackEntry } from "@/components/VinylScene";
 import { DPadControls } from "@/components/DPadControls";
+import { TrackListPanel } from "@/components/TrackListPanel";
+import type { Track } from "@/components/TrackListPanel";
 
 type Direction = "up" | "down" | "left" | "right" | "reset";
 
@@ -22,25 +26,81 @@ interface PageProps {
     params: Promise<{ id: string }>;
 }
 
-// Page must be a Client Component because we use useRef.
-// We extract the playlist ID via React.use() for the Promise params.
-import { use } from "react";
-
 export default function PlaylistDetailPage({ params }: PageProps) {
     const { id } = use(params);
 
-    // Shared ref — written by DPadControls, read by VinylScene's useFrame
     const pressedDirection = useRef<Direction | null>(null);
+    const clearTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    const [panelVisible, setPanelVisible] = useState(false);
+    const [panelAlbumName, setPanelAlbumName] = useState("");
+    const [panelAlbumCoverUrl, setPanelAlbumCoverUrl] = useState("");
+    const [panelTracks, setPanelTracks] = useState<Track[]>([]);
+    const [panelDataReady, setPanelDataReady] = useState(false);
+
+    const handleAlbumExpand = useCallback((
+        albumId: string,
+        albumName: string,
+        albumCoverUrl: string,
+        playlistTracks: PlaylistTrackEntry[]
+    ) => {
+        const ts = Date.now();
+        console.log(`[Click] album clicked: "${albumName}" | albumId: ${albumId} | timestamp: ${ts}`);
+        console.log(`[Click] playlist tracks from this album: ${playlistTracks.length}`);
+        console.log(`[TrackListPanel] using in-memory filter — no API call made`);
+
+        if (clearTimerRef.current) {
+            clearTimeout(clearTimerRef.current);
+            clearTimerRef.current = null;
+        }
+
+        setPanelAlbumName(albumName);
+        setPanelAlbumCoverUrl(albumCoverUrl);
+        setPanelDataReady(false);  // reset while data loads
+        // PlaylistTrackEntry is structurally identical to Track — cast directly
+        setPanelTracks(playlistTracks as Track[]);
+        setPanelDataReady(true);  // data received, even if 0 tracks
+
+        console.log(`[Click] panel tracks set — count: ${playlistTracks.length} | timestamp: ${Date.now()} | elapsed: ${Date.now() - ts}ms`);
+    }, []);
+
+    const handleDiscSlide = useCallback(() => {
+        setPanelVisible(true);
+    }, []);
+
+    const handleCollapse = useCallback(() => {
+        setPanelVisible(false);
+        setPanelDataReady(false);
+        
+        if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+        
+        clearTimerRef.current = setTimeout(() => {
+            setPanelTracks([]);
+            setPanelAlbumName("");
+            setPanelAlbumCoverUrl("");
+        }, 400);
+    }, []);
 
     return (
         <>
-            {/* z-index: 0 — full-screen GLSL organic shader */}
             <ShaderBackground />
 
-            {/* z-index: 1 — transparent R3F canvas, one disc per unique album */}
-            <VinylScene playlistId={id} pressedDirection={pressedDirection} />
+            <VinylScene
+                playlistId={id}
+                pressedDirection={pressedDirection}
+                onAlbumExpand={handleAlbumExpand}
+                onDiscSlide={handleDiscSlide}
+                onCollapse={handleCollapse}
+            />
 
-            {/* z-index: 10 — D-pad camera controls, fixed bottom-right */}
+            <TrackListPanel
+                albumName={panelAlbumName}
+                albumCoverUrl={panelAlbumCoverUrl}
+                tracks={panelTracks}
+                visible={panelVisible}
+                dataReady={panelDataReady}
+            />
+
             <DPadControls pressedDirection={pressedDirection} />
         </>
     );
