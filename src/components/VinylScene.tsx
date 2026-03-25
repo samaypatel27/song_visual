@@ -14,6 +14,15 @@ interface Track {
   albumId: string;
   albumName: string;
   albumCoverUrl: string;
+  trackNumber: number;
+  durationMs: number;
+}
+
+// PlaylistTrackEntry — the shape passed to the panel (no album metadata needed)
+export interface PlaylistTrackEntry {
+  trackNumber: number;
+  trackName: string;
+  durationMs: number;
 }
 
 export interface AlbumGroup {
@@ -28,6 +37,9 @@ export interface VinylSceneProps {
   pressedDirection: React.MutableRefObject<
     "up" | "down" | "left" | "right" | "reset" | null
   >;
+  onAlbumExpand?: (albumId: string, albumName: string, albumCoverUrl: string, playlistTracks: PlaylistTrackEntry[]) => void;
+  onDiscSlide?: () => void;
+  onCollapse?: () => void;
 }
 
 const groupByAlbum = (tracks: Track[]): AlbumGroup[] => {
@@ -241,7 +253,7 @@ function ZoomController({
 // ─────────────────────────────────────────────────────────────────────────────
 const MemoizedAlbumCover = memo(AlbumCover);
 
-export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
+export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDiscSlide, onCollapse }: VinylSceneProps) {
   const [albumGroups, setAlbumGroups] = useState<AlbumGroup[]>([]);
   const [positions, setPositions] = useState<any[]>([]);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
@@ -250,6 +262,10 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
   // Expanded state
   const [expandedAlbumId, setExpandedAlbumId] = useState<string | null>(null);
   const [discSlideActive, setDiscSlideActive] = useState(false);
+
+  // Cross-chunk accumulator: all playlist track entries per album (survives chunk splits)
+  // Keyed by albumId → deduped by trackId to avoid double-counting
+  const playlistTracksByAlbumRef = useRef(new Map<string, PlaylistTrackEntry[]>());
 
   // Zoom state (ref — mutations don't cause re-renders)
   const zoomState = useRef<ZoomState>({
@@ -296,6 +312,15 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
           const chunkMap = new Map<string, AlbumGroup>();
 
           data.tracks.forEach((t: Track) => {
+            // Accumulate full track entries per album across ALL chunks (dedup by name)
+            const entries = playlistTracksByAlbumRef.current.get(t.albumId);
+            const entry: PlaylistTrackEntry = { trackNumber: t.trackNumber, trackName: t.trackName, durationMs: t.durationMs };
+            if (entries) {
+              if (!entries.some(e => e.trackName === t.trackName)) entries.push(entry);
+            } else {
+              playlistTracksByAlbumRef.current.set(t.albumId, [entry]);
+            }
+
             if (existingIds.has(t.albumId)) return;
             if (chunkMap.has(t.albumId)) {
               chunkMap.get(t.albumId)!.trackCount++;
@@ -340,6 +365,8 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
   // ── Click handler — compute camera zoom target ─────────────────────────────
   const handleExpand = (
     albumId: string,
+    albumName: string,
+    albumCoverUrl: string,
     cardWorldX: number,
     cardWorldY: number,
     trackCount: number
@@ -384,6 +411,9 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
 
     setDiscSlideActive(false);
     setExpandedAlbumId(albumId);
+    const playlistTracks = playlistTracksByAlbumRef.current.get(albumId) ?? [];
+    console.log(`[VinylScene] playlist tracks from this album: ${playlistTracks.length}`);
+    onAlbumExpand?.(albumId, albumName, albumCoverUrl, playlistTracks);
 
     console.log(
       `[VinylScene] zoom target — cameraPos: [${targetCamPos.x.toFixed(2)},${targetCamPos.y.toFixed(2)},${targetCamPos.z.toFixed(2)}] | lookAt: [${lookAt.x.toFixed(2)},${lookAt.y.toFixed(2)},0] | cardWorldPos unchanged: [${cardWorldPos.x.toFixed(2)},${cardWorldPos.y.toFixed(2)},0.1]`
@@ -396,6 +426,7 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
     z.collapsing = true;
     setDiscSlideActive(false);
     setExpandedAlbumId(null);
+    onCollapse?.();
   };
 
   return (
@@ -451,7 +482,7 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
           zoomState={zoomState}
           controlsRef={controlsRef}
           pressedDirection={pressedDirection}
-          onDiscSlide={() => setDiscSlideActive(true)}
+          onDiscSlide={() => { setDiscSlideActive(true); onDiscSlide?.(); }}
           onZoomComplete={() => {}}
         />
         {/* Capture original lookAt after controls mount */}
@@ -474,7 +505,7 @@ export function VinylScene({ playlistId, pressedDirection }: VinylSceneProps) {
                 discSlideActive={isExpanded && discSlideActive}
                 isBlurred={isBlurred}
                 albumName={group.albumName}
-                onExpand={() => handleExpand(group.albumId, x, y, group.trackCount)}
+                onExpand={() => handleExpand(group.albumId, group.albumName, group.albumCoverUrl, x, y, group.trackCount)}
               />
             </group>
           );
