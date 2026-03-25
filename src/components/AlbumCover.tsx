@@ -60,7 +60,7 @@ export function AlbumCover({
   const topBevelOpacityRef = useRef(0.18);
   const recordSlideRef = useRef(0);
   const currentScaleRef = useRef(scale);
-  const blurOpacityRef = useRef(0);
+  const visRef = useRef(1); // 1 = fully visible, 0 = hidden (not blurred)
   const discSpinRef = useRef(0);
   const discSpinSpeedRef = useRef(0);
 
@@ -76,7 +76,6 @@ export function AlbumCover({
   const bottomBevelRef = useRef<THREE.MeshStandardMaterial>(null);
   const leftBevelRef = useRef<THREE.MeshStandardMaterial>(null);
   const rightBevelRef = useRef<THREE.MeshStandardMaterial>(null);
-  const blurOverlayRef = useRef<THREE.MeshBasicMaterial>(null);
 
   // Album art texture
   const albumTexture = useTexture(albumCoverUrl);
@@ -87,6 +86,13 @@ export function AlbumCover({
   // Animation
   useFrame(({ clock, camera }) => {
     if (!groupRef.current) return;
+
+    // 0. Visibility fade — when another album is expanded this one fades out and
+    //    is fully hidden via group.visible = false (no color matching, truly invisible).
+    visRef.current += ((isBlurredRef.current ? 0 : 1) - visRef.current) * 0.12;
+    const shouldBeVisible = visRef.current > 0.05;
+    groupRef.current.visible = shouldBeVisible;
+    if (!shouldBeVisible) return; // skip all further work when hidden
 
     // 1. Frustum culling — use WORLD position, not local (local is always (0,0,0)
     //    since AlbumCover lives inside an outer group at [x,y,0.1] in VinylScene).
@@ -125,9 +131,6 @@ export function AlbumCover({
       if (recordTransformRef.current) recordTransformRef.current.position.x = 0;
       if (discGroupRef.current) discGroupRef.current.visible = false;
 
-      // Still update blur overlay even when idle
-      blurOpacityRef.current += ((isBlurredRef.current ? 0.82 : 0) - blurOpacityRef.current) * 0.055;
-      if (blurOverlayRef.current) blurOverlayRef.current.opacity = blurOpacityRef.current;
       return;
     }
 
@@ -174,10 +177,6 @@ export function AlbumCover({
     if (recordTransformRef.current) {
       recordTransformRef.current.rotation.z = discSpinRef.current;
     }
-
-    // Blur overlay
-    blurOpacityRef.current += ((isBlurredRef.current ? 0.82 : 0) - blurOpacityRef.current) * 0.055;
-    if (blurOverlayRef.current) blurOverlayRef.current.opacity = blurOpacityRef.current;
   });
 
   // Pointer events
@@ -342,12 +341,6 @@ export function AlbumCover({
         <meshBasicMaterial color="#fff" transparent opacity={0.08} />
       </mesh>
 
-      {/* Blur overlay — dims this card when another is expanded.
-          renderOrder=1 ensures it renders on top of the sleeve face. */}
-      <mesh position={[0, 0, cardDepth / 2 + 0.012]} renderOrder={1}>
-        <planeGeometry args={[cardSize * 1.15, cardSize * 1.15]} />
-        <meshBasicMaterial ref={blurOverlayRef} color="#0a0a0a" transparent opacity={0} depthWrite={false} />
-      </mesh>
     </group>
   );
 }
