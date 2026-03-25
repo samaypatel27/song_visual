@@ -68,6 +68,20 @@ export function AlbumCover({
   albumTexture.minFilter = THREE.LinearFilter;
   albumTexture.magFilter = THREE.LinearFilter;
 
+  // Disc must always render BEFORE the sleeve so the sleeve correctly occludes it.
+  // At camera z=22 with near=0.1/far=200, the depth buffer cannot distinguish
+  // z values within ~0.001 NDC near z≈0  — causing z-fighting where disc overlaps
+  // sleeve. renderOrder=-1 forces all disc geometry to render first; the sleeve
+  // (renderOrder=0 default) then overwrites it wherever the sleeve is in front.
+  useEffect(() => {
+    if (!discGroupRef.current) return;
+    discGroupRef.current.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        (child as THREE.Mesh).renderOrder = -1;
+      }
+    });
+  }, []);
+
   // Animation
   useFrame(({ clock, camera }) => {
     if (!groupRef.current) return;
@@ -249,38 +263,58 @@ export function AlbumCover({
           position={[0, 0, cardDepth * 0.3]}
           frustumCulled={true}
         >
+          {/* Disc body — dark vinyl cylinder for 3D side thickness */}
           <mesh rotation={[Math.PI / 2, 0, 0]} frustumCulled={true}>
             <cylinderGeometry
-              args={[cardSize * 0.44, cardSize * 0.44, 0.04, 48]}
+              args={[cardSize * 0.44, cardSize * 0.44, 0.04, 64]}
               onUpdate={onUpdateGeom}
             />
-            <meshStandardMaterial
-              color="#0a0a0a"
-              roughness={0.12}
-              metalness={0.85}
-            />
-          </mesh>
-          
-          {/* Vinyl Inner Label */}
-          <mesh rotation={[Math.PI / 2, 0, 0]} frustumCulled={true}>
-            <cylinderGeometry
-              args={[cardSize * 0.15, cardSize * 0.15, 0.042, 32]}
-              onUpdate={onUpdateGeom}
-            />
-            <meshStandardMaterial
-              map={albumTexture}
-              roughness={0.8}
-              metalness={0.1}
-            />
+            <meshStandardMaterial color="#0a0a0a" roughness={0.15} metalness={0.8} />
           </mesh>
 
-          {/* Spindle Hole */}
-          <mesh rotation={[Math.PI / 2, 0, 0]} frustumCulled={true}>
-            <cylinderGeometry
-              args={[cardSize * 0.015, cardSize * 0.015, 0.045, 16]}
-              onUpdate={onUpdateGeom}
-            />
-            <meshBasicMaterial color="#111" />
+          {/* Picture disc face — CircleGeometry lies in XY plane by default (no rotation needed) */}
+          {/* MeshBasicMaterial ensures lighting never washes out the texture */}
+          <mesh position={[0, 0, 0.021]} frustumCulled={true}>
+            <circleGeometry args={[cardSize * 0.44, 64]} />
+            <meshBasicMaterial map={albumTexture} />
+          </mesh>
+
+          {/* Groove rings — outer zone (rim-side), dense and thin */}
+          {[0.43, 0.41, 0.39, 0.37, 0.35, 0.33, 0.31, 0.29].map((r, i) => (
+            <mesh key={`og-${i}`} position={[0, 0, 0.023]} frustumCulled={true}>
+              <torusGeometry args={[cardSize * r, cardSize * 0.002, 4, 80]} />
+              <meshBasicMaterial color="#000" transparent opacity={0.32} />
+            </mesh>
+          ))}
+
+          {/* Label border ring — bright chrome outline at label edge, most prominent ring */}
+          <mesh position={[0, 0, 0.024]} frustumCulled={true}>
+            <torusGeometry args={[cardSize * 0.195, cardSize * 0.006, 6, 80]} />
+            <meshBasicMaterial color="#c8c8c8" transparent opacity={0.85} />
+          </mesh>
+
+          {/* Label area fill — slightly darker tint to distinguish from grooves */}
+          <mesh position={[0, 0, 0.0215]} frustumCulled={true}>
+            <circleGeometry args={[cardSize * 0.19, 48]} />
+            <meshBasicMaterial color="#000" transparent opacity={0.18} />
+          </mesh>
+
+          {/* Inner label ring — subtle secondary chrome ring just inside border */}
+          <mesh position={[0, 0, 0.0245]} frustumCulled={true}>
+            <torusGeometry args={[cardSize * 0.165, cardSize * 0.003, 4, 80]} />
+            <meshBasicMaterial color="#aaa" transparent opacity={0.55} />
+          </mesh>
+
+          {/* Spindle hole — enlarged so it reads clearly as a physical hole */}
+          <mesh position={[0, 0, 0.026]} frustumCulled={true}>
+            <circleGeometry args={[cardSize * 0.055, 24]} />
+            <meshBasicMaterial color="#060606" />
+          </mesh>
+
+          {/* Spindle chrome rim */}
+          <mesh position={[0, 0, 0.0255]} frustumCulled={true}>
+            <torusGeometry args={[cardSize * 0.056, cardSize * 0.004, 4, 32]} />
+            <meshBasicMaterial color="#bbb" transparent opacity={0.7} />
           </mesh>
 
         </group>
