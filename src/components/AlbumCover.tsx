@@ -181,6 +181,7 @@ export function AlbumCover({
 
   // Pointer events
   const onPointerOver = () => {
+    if (isBlurredRef.current) return;
     hoveredRef.current = true;
     document.body.style.cursor = "pointer";
   };
@@ -190,6 +191,7 @@ export function AlbumCover({
   };
   const handleClick = (e: any) => {
     e.stopPropagation();
+    if (isBlurredRef.current) return;
     onExpand?.();
   };
 
@@ -249,7 +251,7 @@ export function AlbumCover({
       {/* Disc group — renderOrder={-1} forces all disc geometry to render before
           the sleeve so sleeve correctly occludes the disc via depth test */}
       <group ref={discGroupRef} frustumCulled={true}>
-        <group ref={recordTransformRef} position={[0, 0, cardDepth * 0.3]} frustumCulled={true}>
+        <group ref={recordTransformRef} position={[0, 0, 0]} frustumCulled={true}>
 
           {/* Disc body cylinder */}
           <mesh rotation={[Math.PI / 2, 0, 0]} frustumCulled={true} renderOrder={-1}>
@@ -306,9 +308,9 @@ export function AlbumCover({
 
       {/* Album cover card (sleeve) — renders at default renderOrder=0, after disc */}
       <mesh
-        onPointerOver={onPointerOver}
-        onPointerOut={onPointerOut}
-        onClick={handleClick}
+        onPointerOver={isBlurred ? undefined : onPointerOver}
+        onPointerOut={isBlurred ? undefined : onPointerOut}
+        onClick={isBlurred ? undefined : handleClick}
         material={materials}
         castShadow
         receiveShadow

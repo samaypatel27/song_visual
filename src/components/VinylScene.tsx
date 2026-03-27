@@ -474,7 +474,7 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
         }}
         panSpeed={0.8}
         zoomSpeed={0.8}
-        minDistance={8}
+        minDistance={3}
         maxDistance={50}
         makeDefault
       />
@@ -554,6 +554,43 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
         />
       </mesh>
     </Canvas>
+    {/* Back Arrow Overlay */}
+    {expandedAlbumId && (
+      <div 
+        onClick={collapse}
+        style={{
+          position: "absolute",
+          top: "40px",
+          left: "40px",
+          width: "48px",
+          height: "48px",
+          backgroundColor: "rgba(0,0,0,0.4)",
+          backdropFilter: "blur(12px)",
+          borderRadius: "50%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          zIndex: 50,
+          border: "1px solid rgba(255,255,255,0.1)",
+          transition: "all 0.2s ease"
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.15)";
+          e.currentTarget.style.transform = "scale(1.05)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.4)";
+          e.currentTarget.style.transform = "scale(1)";
+        }}
+        title="Go Back"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+      </div>
+    )}
+
     {isFetchingMore && (
       <div style={{
         position: "absolute",
