@@ -1,6 +1,97 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
+import { Canvas, useFrame } from "@react-three/fiber";
+import * as THREE from "three";
+
+const fragmentShader = `
+uniform float uTime;
+varying vec2 vUv;
+
+vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
+float snoise(vec2 v) {
+  const vec4 C = vec4(0.211324865405187, 0.366025403784439,
+           -0.577350269189626, 0.024390243902439);
+  vec2 i  = floor(v + dot(v, C.yy) );
+  vec2 x0 = v -   i + dot(i, C.xx);
+  vec2 i1;
+  i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+  i = mod(i, 289.0);
+  vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 ))
+  + i.x + vec3(0.0, i1.x, 1.0 ));
+  vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy),
+    dot(x12.zw,x12.zw)), 0.0);
+  m = m*m;
+  m = m*m;
+  vec3 x = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(x) - 0.5;
+  vec3 ox = floor(x + 0.5);
+  vec3 a0 = x - ox;
+  m *= 1.79284291400159 - 0.85373472095314 * ( a0*a0 + h*h );
+  vec3 g;
+  g.x  = a0.x  * x0.x  + h.x  * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m, g);
+}
+
+void main() {
+    float t = uTime * 0.05; 
+    vec2 pos = vUv * 1.5;
+
+    float n1 = snoise(pos + t);
+    float n2 = snoise(pos * 2.0 - t * 0.8);
+    float n3 = snoise(pos * 4.0 + t * 1.2);
+    
+    float n = n1 * 0.5 + n2 * 0.25 + n3 * 0.125;
+    n = n * 0.5 + 0.5; 
+    
+    vec3 colorBase = vec3(0.0, 0.0, 0.0);
+    vec3 colorNavy = vec3(0.039, 0.039, 0.102); 
+    vec3 colorPurple = vec3(0.102, 0.102, 0.227); 
+    
+    vec3 finalColor = mix(colorBase, colorNavy, smoothstep(0.2, 0.5, n));
+    finalColor = mix(finalColor, colorPurple, smoothstep(0.5, 0.8, n));
+
+    gl_FragColor = vec4(finalColor, 1.0);
+}
+`;
+
+const vertexShader = `
+varying vec2 vUv;
+void main() {
+    vUv = uv;
+    gl_Position = vec4(position, 1.0);
+}
+`;
+
+function BlobShader() {
+    const materialRef = useRef<THREE.ShaderMaterial>(null);
+    const uniforms = useMemo(() => ({
+        uTime: { value: 0 }
+    }), []);
+
+    useFrame((state) => {
+        if (materialRef.current) {
+            materialRef.current.uniforms.uTime.value = state.clock.elapsedTime;
+        }
+    });
+
+    return (
+        <mesh>
+            <planeGeometry args={[2, 2]} />
+            <shaderMaterial
+                ref={materialRef}
+                vertexShader={vertexShader}
+                fragmentShader={fragmentShader}
+                uniforms={uniforms}
+                depthWrite={false}
+                depthTest={false}
+            />
+        </mesh>
+    );
+}
 
 export interface Track {
   trackNumber: number;
@@ -140,20 +231,10 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
 
   if (!mounted) return null;
 
-  const { primary: p1, secondary: p2 } = palette;
-
-  // Dynamic styles driven by extracted palette
-  const cardStyle: React.CSSProperties = {
-    background: `
-      radial-gradient(ellipse at top left, rgba(${p1},0.12) 0%, transparent 60%),
-      radial-gradient(ellipse at bottom right, rgba(${p2},0.09) 0%, transparent 55%),
-      rgba(255,255,255,0.05)
-    `,
-    transition: "background 600ms ease",
-  };
+  const { primary: p1 } = palette;
 
   const timelineStyle: React.CSSProperties = {
-    background: `linear-gradient(to bottom, rgba(${p1},0.15), rgba(${p1},0.9) 50%, rgba(${p1},0.15))`,
+    background: `linear-gradient(to bottom, transparent, rgba(200, 160, 80, 0.85) 50%, transparent)`,
   };
 
   return (
@@ -177,12 +258,17 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
           flex: 1;
           display: flex;
           flex-direction: column;
-          backdrop-filter: blur(24px) saturate(1.4);
-          -webkit-backdrop-filter: blur(24px) saturate(1.4);
-          border: 1px solid rgba(255,255,255,0.12);
           border-radius: 16px;
+          border: 1px solid rgba(255,255,255,0.12);
           box-shadow: 0 8px 48px rgba(0,0,0,0.35);
           overflow: hidden;
+          position: relative;
+        }
+        .tlp-shader-bg {
+          position: absolute;
+          inset: 0;
+          z-index: -1;
+          pointer-events: none;
         }
         .tlp-header {
           padding: 22px 20px 14px 32px;
@@ -223,6 +309,10 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
         .tlp-row {
           display: flex; align-items: center;
           height: 44px; position: relative; cursor: default;
+          transition: background 200ms ease-out;
+        }
+        .tlp-row:hover {
+          background: linear-gradient(to right, transparent, rgba(200,160,80,0.08) 20%, rgba(200,160,80,0.14) 50%, rgba(200,160,80,0.08) 80%, transparent);
         }
         .tlp-dash {
           width: 12px; height: 1px;
@@ -234,33 +324,50 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
           top: 50%; transform: translateY(-50%);
           width: 2px; height: 0;
           border-radius: 1px;
-          transition: height 120ms ease-out, background-color 600ms ease;
+          background: linear-gradient(to bottom, transparent, rgba(200,160,80,0.9) 50%, transparent);
+          box-shadow: 0 0 0px transparent;
+          transition: height 200ms ease-out, box-shadow 200ms ease-out, background 200ms ease-out;
         }
-        .tlp-row:hover::before { height: 44px; }
+        .tlp-row:hover::before { 
+          height: 44px; 
+          box-shadow: 0 0 8px rgba(200,160,80,0.5);
+          transition: height 120ms ease-out, box-shadow 120ms ease-out, background 120ms ease-out;
+        }
         .tlp-num {
           font-family: 'Inter', system-ui, sans-serif;
           font-size: 0.7em; font-weight: 400;
-          color: white; opacity: 0.3;
+          color: rgba(232, 213, 176, 0.35);
           min-width: 24px; text-align: right;
           padding-right: 10px; flex-shrink: 0;
         }
         .tlp-title {
           font-family: 'Inter', system-ui, sans-serif;
-          font-size: 0.92em; font-weight: 200;
-          letter-spacing: 0.08em; color: rgba(255,255,255,0.75);
+          font-size: 0.95em; font-weight: 700;
+          letter-spacing: 0.04em; color: #e8d5b0;
+          text-shadow: 0 1px 8px rgba(0,0,0,0.8);
           flex: 1; white-space: nowrap;
           overflow: hidden; text-overflow: ellipsis;
-          transition: opacity 150ms ease-out, transform 150ms ease-out;
+          transition: color 200ms ease-out, letter-spacing 200ms ease-out, transform 200ms ease-out, text-shadow 200ms ease-out;
         }
-        .tlp-row:hover .tlp-title { opacity: 1; transform: translateX(5px); }
+        .tlp-row:hover .tlp-title { 
+          color: #f5e6c0;
+          letter-spacing: 0.07em;
+          transform: translateX(8px);
+          text-shadow: 0 0 16px rgba(200,160,80,0.4), 0 1px 8px rgba(0,0,0,0.8);
+          transition: color 180ms ease-out, letter-spacing 180ms ease-out, transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1), text-shadow 180ms ease-out;
+        }
         .tlp-dur {
           font-family: 'Inter', system-ui, sans-serif;
           font-size: 0.75em; font-weight: 300;
-          color: white; opacity: 0.3;
+          color: rgba(232, 213, 176, 0.3);
           flex-shrink: 0; padding-left: 10px;
-          transition: opacity 150ms ease-out;
+          transition: opacity 200ms ease-out, color 200ms ease-out;
         }
-        .tlp-row:hover .tlp-dur { opacity: 0.55; }
+        .tlp-row:hover .tlp-dur { 
+          opacity: 0.65; 
+          color: #f5e6c0;
+          transition: opacity 180ms ease-out, color 180ms ease-out;
+        }
         .tlp-loading {
           display: flex; align-items: center; justify-content: center;
           padding: 40px 20px;
@@ -270,14 +377,18 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
         }
       `}</style>
 
-      {/* Per-album dynamic styles: accent color & dash color driven by palette */}
+      {/* Per-album dynamic styles: dash color driven by palette */}
       <style>{`
-        .tlp-outer .tlp-row::before { background-color: rgb(${p1}); }
         .tlp-outer .tlp-dash { background: rgba(${p1},0.5); }
       `}</style>
 
       <div className={`tlp-outer${entered ? " entered" : ""}`}>
-        <div className="tlp-card" style={cardStyle}>
+        <div className="tlp-card">
+          <div className="tlp-shader-bg">
+            <Canvas gl={{ antialias: false, alpha: false }} camera={{ position: [0, 0, 1] }}>
+              <BlobShader />
+            </Canvas>
+          </div>
           <div className="tlp-header">
             <p className="tlp-album-name">{albumName}</p>
             {tracks.length > 0 && (
