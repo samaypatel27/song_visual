@@ -60,6 +60,7 @@ export function AlbumCover({
   const topBevelOpacityRef = useRef(0.18);
   const recordSlideRef = useRef(0);
   const currentScaleRef = useRef(scale);
+  const currentZRef = useRef(position[2]);
   const visRef = useRef(1); // 1 = fully visible, 0 = hidden (not blurred)
   const discSpinRef = useRef(0);
   const discSpinSpeedRef = useRef(0);
@@ -107,6 +108,9 @@ export function AlbumCover({
 
     // Scale target: expanded cards don't scale up on hover (camera does the zoom)
     const targetScale = (isHovered && !slideActive ? 1.1 : 1.0) * scale;
+    
+    // Z-depth target: Hovered/active albums float entirely forward to avoid slipping under neighbors
+    const targetZ = position[2] + ((isHovered || slideActive) ? 0.35 : 0);
 
     // Disc slide target:
     //  • idle                → 0 (hidden)
@@ -120,6 +124,7 @@ export function AlbumCover({
 
     const isTransitioning =
       Math.abs(currentScaleRef.current - targetScale) > 0.001 ||
+      Math.abs(currentZRef.current - targetZ) > 0.001 ||
       Math.abs(recordSlideRef.current - slideTarget) > 0.005;
 
     // 2. Idle state silence (no hover, no expand, not transitioning)
@@ -127,6 +132,7 @@ export function AlbumCover({
       groupRef.current.scale.set(targetScale, targetScale, 1);
       groupRef.current.rotation.set(0, 0, 0);
       groupRef.current.position.set(position[0], position[1], position[2]);
+      currentZRef.current = position[2];
       recordSlideRef.current = 0;
       if (recordTransformRef.current) recordTransformRef.current.position.x = 0;
       if (discGroupRef.current) discGroupRef.current.visible = false;
@@ -149,11 +155,12 @@ export function AlbumCover({
     const micro = Math.sin((t + phase * 0.7) * MICRO_FREQ * 2 * Math.PI) * microAmp;
     const floatY = Math.sin((t + phase * 0.3) * FLOAT_FREQ * 2 * Math.PI) * (slideActive ? 0.03 : 0.1);
 
-    // Position & scale — card NEVER changes X/Y world position
+    // Position & scale
     currentScaleRef.current += (targetScale - currentScaleRef.current) * 0.18;
+    currentZRef.current += (targetZ - currentZRef.current) * 0.18;
     groupRef.current.scale.set(currentScaleRef.current, currentScaleRef.current, 1);
     groupRef.current.rotation.set(0, 0, jiggle + micro);
-    groupRef.current.position.set(position[0], position[1] + floatY, position[2]);
+    groupRef.current.position.set(position[0], position[1] + floatY, currentZRef.current);
 
     // Bevel opacities
     bevelOpacityRef.current += ((isHovered ? 0.22 : 0.12) - bevelOpacityRef.current) * 0.18;

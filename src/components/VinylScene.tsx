@@ -84,24 +84,30 @@ const WALL_HEIGHT = 70;
 const getCardSize = (trackCount: number) => Math.min(1.8 + (trackCount - 1) * 0.45, 4.2) * 2;
 
 const WALL_ASPECT = WALL_WIDTH / WALL_HEIGHT;
-const generatePositions = (newGroups: AlbumGroup[], existingPositions: any[]) => {
+const generatePositions = (groups: AlbumGroup[]) => {
   const positions: { x: number, y: number, angle: number, scale: number, size: number }[] = [];
   const wallClamp = (x: number, y: number) => [
     Math.max(-WALL_WIDTH / 2 + 2, Math.min(WALL_WIDTH / 2 - 2, x)),
     Math.max(-WALL_HEIGHT / 2 + 2, Math.min(WALL_HEIGHT / 2 - 2, y)),
   ];
 
-  for (let i = 0; i < newGroups.length; i++) {
-    const scale = 1.1 + (Math.random() - 0.5) * 0.12;
-    const size = getCardSize(newGroups[i].trackCount) * scale;
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    // Deterministic random properties based on albumId
+    let h = 0;
+    for(let j = 0; j < group.albumId.length; j++) h = Math.imul(31, h) + group.albumId.charCodeAt(j) | 0;
+    const r1 = (((Math.imul(h ^ 1, 2654435761) ^ (h >>> 16)) >>> 0) / 4294967296);
+    const r2 = (((Math.imul(h ^ 2, 2654435761) ^ (h >>> 16)) >>> 0) / 4294967296);
+
+    const scale = 1.1 + (r1 - 0.5) * 0.12;
+    const size = getCardSize(group.trackCount) * scale;
     
     let collision = true;
     let placedX = 0, placedY = 0;
     
-    const totalCount = existingPositions.length + i;
-    let r = Math.max(0, Math.floor(Math.sqrt((totalCount * 22) / (WALL_ASPECT * Math.PI))) - 1); 
+    let r = Math.max(0, Math.floor(Math.sqrt((i * 22) / (WALL_ASPECT * Math.PI))) - 1); 
     const dr = 0.5; // Small outward step
-    let angleOffset = Math.random() * Math.PI * 2; // Randomize starting angle
+    let angleOffset = r2 * Math.PI * 2; // Randomize starting angle
 
     while (collision && r < 100) {
       const perimeter = r === 0 ? 1 : 4 * r * (WALL_ASPECT + 1);
@@ -123,11 +129,10 @@ const generatePositions = (newGroups: AlbumGroup[], existingPositions: any[]) =>
         
         let [clampedX, clampedY] = wallClamp(x, y);
         
-        // Test collision against BOTH existing and newly generated items in this chunk
         let tempCollision = false;
         const margin = 0.8; // extra space between albums
         
-        for (const p of [...existingPositions, ...positions]) {
+        for (const p of positions) {
           const dx = Math.abs(clampedX - p.x);
           const dy = Math.abs(clampedY - p.y);
           const minDistanceX = (size + p.size) / 2 + margin;
@@ -155,8 +160,8 @@ const generatePositions = (newGroups: AlbumGroup[], existingPositions: any[]) =>
     
     // Fallback if we exceeded bounds (should be rare)
     if (collision) {
-      placedX = (Math.random() - 0.5) * WALL_WIDTH;
-      placedY = (Math.random() - 0.5) * WALL_HEIGHT;
+      placedX = (r1 - 0.5) * WALL_WIDTH;
+      placedY = (r2 - 0.5) * WALL_HEIGHT;
     }
 
     positions.push({ x: placedX, y: placedY, angle: 0, scale, size });
@@ -291,8 +296,7 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
         
         setIsFetchingMore(true);
         
-        let cumulativeGroups: AlbumGroup[] = [];
-        let cumulativePositions: any[] = [];
+        const globalChunkMap = new Map<string, AlbumGroup>();
         
         while (offset < total && isMounted) {
           const res = await fetch(`/api/spotify/playlist-tracks/${playlistId}?limit=${limit}&offset=${offset}`, { signal: controller.signal });
@@ -304,27 +308,14 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
           
           if (!data.tracks) break;
 
-          const existingIds = new Set(cumulativeGroups.map(g => g.albumId));
-          const chunkMap = new Map<string, AlbumGroup>();
-          let updatedExisting = false;
-          
           data.tracks.forEach((t: Track) => {
             const trackEntry = { trackNumber: t.trackNumber, trackName: t.trackName, durationMs: t.durationMs };
-            if (existingIds.has(t.albumId)) {
-              const group = cumulativeGroups.find(g => g.albumId === t.albumId);
-              if (group) {
-                group.trackCount++;
-                group.tracks.push(trackEntry);
-                updatedExisting = true;
-              }
-              return;
-            }
-            if (chunkMap.has(t.albumId)) {
-              const group = chunkMap.get(t.albumId)!;
+            if (globalChunkMap.has(t.albumId)) {
+              const group = globalChunkMap.get(t.albumId)!;
               group.trackCount++;
               group.tracks.push(trackEntry);
             } else {
-              chunkMap.set(t.albumId, { 
+              globalChunkMap.set(t.albumId, { 
                 albumId: t.albumId, 
                 albumName: t.albumName, 
                 albumCoverUrl: t.albumCoverUrl, 
@@ -334,17 +325,15 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
             }
           });
           
-          // Sort new chunk groups to maintain aesthetic sizing prioritization for the chunk
-          const newGroups = Array.from(chunkMap.values()).sort((a,b) => b.trackCount - a.trackCount);
+          // Sort entire known list of albums to maintain aesthetic sizing prioritization 
+          const sortedAllGroups = Array.from(globalChunkMap.values()).sort((a,b) => b.trackCount - a.trackCount);
           
-          if (newGroups.length > 0 || updatedExisting) {
-            const newPositions = generatePositions(newGroups, cumulativePositions);
-            cumulativeGroups = [...cumulativeGroups, ...newGroups];
-            cumulativePositions = [...cumulativePositions, ...newPositions];
+          if (sortedAllGroups.length > 0) {
+            const newPositions = generatePositions(sortedAllGroups);
             
             // Append securely to trigger React reconciler
-            setAlbumGroups([...cumulativeGroups]);
-            setPositions(cumulativePositions);
+            setAlbumGroups(sortedAllGroups);
+            setPositions(newPositions);
           }
           
           offset += limit;
