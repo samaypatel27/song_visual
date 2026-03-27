@@ -71,9 +71,9 @@ export default function PlaylistDetailPage({ params }: PageProps) {
     const handleCollapse = useCallback(() => {
         setPanelVisible(false);
         setPanelDataReady(false);
-        
+
         if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
-        
+
         clearTimerRef.current = setTimeout(() => {
             setPanelTracks([]);
             setPanelAlbumName("");
