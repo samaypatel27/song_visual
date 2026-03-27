@@ -115,8 +115,8 @@ export function AlbumCover({
     const slideTarget = slideActive
       ? cardSize * 0.72
       : isHovered
-      ? cardSize * 0.55
-      : 0;
+        ? cardSize * 0.55
+        : 0;
 
     const isTransitioning =
       Math.abs(currentScaleRef.current - targetScale) > 0.001 ||
@@ -144,9 +144,9 @@ export function AlbumCover({
 
     // Jiggle is suppressed when expanded (camera provides the motion drama)
     const jiggleAmp = (isHovered && !slideActive) ? (Math.PI / 180) * 8 : (Math.PI / 180) * 1;
-    const microAmp  = (isHovered && !slideActive) ? (Math.PI / 180) * 2 : (Math.PI / 180) * 0.3;
+    const microAmp = (isHovered && !slideActive) ? (Math.PI / 180) * 2 : (Math.PI / 180) * 0.3;
     const jiggle = Math.sin((t + phase) * JIGGLE_FREQ * 2 * Math.PI) * jiggleAmp;
-    const micro  = Math.sin((t + phase * 0.7) * MICRO_FREQ * 2 * Math.PI) * microAmp;
+    const micro = Math.sin((t + phase * 0.7) * MICRO_FREQ * 2 * Math.PI) * microAmp;
     const floatY = Math.sin((t + phase * 0.3) * FLOAT_FREQ * 2 * Math.PI) * (slideActive ? 0.03 : 0.1);
 
     // Position & scale — card NEVER changes X/Y world position
@@ -156,12 +156,12 @@ export function AlbumCover({
     groupRef.current.position.set(position[0], position[1] + floatY, position[2]);
 
     // Bevel opacities
-    bevelOpacityRef.current    += ((isHovered ? 0.22 : 0.12) - bevelOpacityRef.current)    * 0.18;
+    bevelOpacityRef.current += ((isHovered ? 0.22 : 0.12) - bevelOpacityRef.current) * 0.18;
     topBevelOpacityRef.current += ((isHovered ? 0.28 : 0.18) - topBevelOpacityRef.current) * 0.18;
-    if (topBevelRef.current)    topBevelRef.current.opacity    = topBevelOpacityRef.current;
+    if (topBevelRef.current) topBevelRef.current.opacity = topBevelOpacityRef.current;
     if (bottomBevelRef.current) bottomBevelRef.current.opacity = bevelOpacityRef.current;
-    if (leftBevelRef.current)   leftBevelRef.current.opacity   = bevelOpacityRef.current;
-    if (rightBevelRef.current)  rightBevelRef.current.opacity  = bevelOpacityRef.current;
+    if (leftBevelRef.current) leftBevelRef.current.opacity = bevelOpacityRef.current;
+    if (rightBevelRef.current) rightBevelRef.current.opacity = bevelOpacityRef.current;
 
     // Disc slide (seamless continuation from hover position to full expand)
     const slideLerp = slideActive ? 0.07 : 0.12;
