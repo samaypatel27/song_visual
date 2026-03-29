@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, memo, Suspense } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { OrbitControls, useTexture } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import * as THREE from "three";
 import { VinylRecord } from "./VinylRecord";
@@ -95,55 +95,55 @@ const generatePositions = (groups: AlbumGroup[]) => {
     const group = groups[i];
     // Deterministic random properties based on albumId
     let h = 0;
-    for(let j = 0; j < group.albumId.length; j++) h = Math.imul(31, h) + group.albumId.charCodeAt(j) | 0;
+    for (let j = 0; j < group.albumId.length; j++) h = Math.imul(31, h) + group.albumId.charCodeAt(j) | 0;
     const r1 = (((Math.imul(h ^ 1, 2654435761) ^ (h >>> 16)) >>> 0) / 4294967296);
     const r2 = (((Math.imul(h ^ 2, 2654435761) ^ (h >>> 16)) >>> 0) / 4294967296);
 
     const scale = 1.1 + (r1 - 0.5) * 0.12;
     const size = getCardSize(group.trackCount) * scale;
-    
+
     let collision = true;
     let placedX = 0, placedY = 0;
-    
-    let r = Math.max(0, Math.floor(Math.sqrt((i * 22) / (WALL_ASPECT * Math.PI))) - 1); 
+
+    let r = Math.max(0, Math.floor(Math.sqrt((i * 22) / (WALL_ASPECT * Math.PI))) - 1);
     const dr = 0.5; // Small outward step
     let angleOffset = r2 * Math.PI * 2; // Randomize starting angle
 
     while (collision && r < 100) {
       const perimeter = r === 0 ? 1 : 4 * r * (WALL_ASPECT + 1);
       const numSamples = r === 0 ? 1 : Math.ceil(perimeter * 0.8);
-      
+
       let foundSpot = false;
-      
+
       for (let s = 0; s < numSamples; s++) {
         const theta = angleOffset + (s / numSamples) * Math.PI * 2;
-        
+
         let u = Math.cos(theta);
         let v = Math.sin(theta);
         const max = Math.max(Math.abs(u), Math.abs(v));
         u /= max; // maps to a square profile [-1, 1]
         v /= max;
-        
+
         let x = r * WALL_ASPECT * u;
         let y = r * v;
-        
+
         let [clampedX, clampedY] = wallClamp(x, y);
-        
+
         let tempCollision = false;
         const margin = 0.8; // extra space between albums
-        
+
         for (const p of positions) {
           const dx = Math.abs(clampedX - p.x);
           const dy = Math.abs(clampedY - p.y);
           const minDistanceX = (size + p.size) / 2 + margin;
           const minDistanceY = (size + p.size) / 2 + margin;
-          
+
           if (dx < minDistanceX && dy < minDistanceY) {
             tempCollision = true;
             break;
           }
         }
-        
+
         if (!tempCollision) {
           foundSpot = true;
           placedX = clampedX;
@@ -152,12 +152,12 @@ const generatePositions = (groups: AlbumGroup[]) => {
           break;
         }
       }
-      
+
       if (!foundSpot) {
         r += dr;
       }
     }
-    
+
     // Fallback if we exceeded bounds (should be rare)
     if (collision) {
       placedX = (r1 - 0.5) * WALL_WIDTH;
@@ -227,9 +227,9 @@ function ZoomController({
       if (!ctrl) return;
       const dir = pressedDirection.current;
       const speed = 0.25;
-      if (dir === "up")    ctrl.target.y += speed;
-      if (dir === "down")  ctrl.target.y -= speed;
-      if (dir === "left")  ctrl.target.x -= speed;
+      if (dir === "up") ctrl.target.y += speed;
+      if (dir === "down") ctrl.target.y -= speed;
+      if (dir === "left") ctrl.target.x -= speed;
       if (dir === "right") ctrl.target.x += speed;
       if (dir === "reset") ctrl.target.lerp(ORIGIN, 0.12);
 
@@ -258,6 +258,19 @@ function OriginCapture({
     captured.current = true;
   });
   return null;
+}
+
+function WallBackground() {
+  const tex = useTexture("/Wall_Background.png");
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  return (
+    <mesh position={[0, 0, -3]}>
+      <planeGeometry args={[120, 70]} />
+      <meshStandardMaterial map={tex} roughness={0.85} metalness={0.0} />
+    </mesh>
+  );
 }
 
 // VinylScene
@@ -293,19 +306,19 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
         let offset = 0;
         let limit = 50;
         let total = 1;
-        
+
         setIsFetchingMore(true);
-        
+
         const globalChunkMap = new Map<string, AlbumGroup>();
-        
+
         while (offset < total && isMounted) {
           const res = await fetch(`/api/spotify/playlist-tracks/${playlistId}?limit=${limit}&offset=${offset}`, { signal: controller.signal });
           if (!res.ok) throw new Error(String(res.status));
-          
+
           const data = await res.json();
           total = data.total || 0;
           limit = data.limit || 50;
-          
+
           if (!data.tracks) break;
 
           data.tracks.forEach((t: Track) => {
@@ -315,27 +328,27 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
               group.trackCount++;
               group.tracks.push(trackEntry);
             } else {
-              globalChunkMap.set(t.albumId, { 
-                albumId: t.albumId, 
-                albumName: t.albumName, 
-                albumCoverUrl: t.albumCoverUrl, 
-                trackCount: 1, 
-                tracks: [trackEntry] 
+              globalChunkMap.set(t.albumId, {
+                albumId: t.albumId,
+                albumName: t.albumName,
+                albumCoverUrl: t.albumCoverUrl,
+                trackCount: 1,
+                tracks: [trackEntry]
               });
             }
           });
-          
+
           // Sort entire known list of albums to maintain aesthetic sizing prioritization 
-          const sortedAllGroups = Array.from(globalChunkMap.values()).sort((a,b) => b.trackCount - a.trackCount);
-          
+          const sortedAllGroups = Array.from(globalChunkMap.values()).sort((a, b) => b.trackCount - a.trackCount);
+
           if (sortedAllGroups.length > 0) {
             const newPositions = generatePositions(sortedAllGroups);
-            
+
             // Append securely to trigger React reconciler
             setAlbumGroups(sortedAllGroups);
             setPositions(newPositions);
           }
-          
+
           offset += limit;
         }
       } catch (err: any) {
@@ -346,7 +359,7 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
         if (isMounted) setIsFetchingMore(false);
       }
     };
-    
+
     loadData();
     return () => {
       isMounted = false;
@@ -410,193 +423,193 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
 
   return (
     <>
-    <Canvas
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1,
-        background: "transparent",
-        pointerEvents: "auto",
-      }}
-      gl={{ alpha: true, antialias: true }}
-      dpr={[1, 2]}
-      camera={{ fov: 70, position: [0, 0, 22], near: 0.1, far: 200 }}
-      onCreated={({ camera }) => {
-        (window as any).__camera = camera;
-        zoomState.current.originalCamPos = camera.position.clone();
-      }}
-    >
-      {/* Lighting */}
-      <ambientLight intensity={0.8} />
-      <directionalLight position={[0, 5, 15]} intensity={0.6} color="#fff8f0" />
-      {/* wall fill */}
-      <pointLight position={[6, 6, 8]} intensity={1.4} color="#ffffff" />
-      <pointLight position={[-6, -4, 3]} intensity={0.5} color="#3a3aff" />
-      <pointLight position={[0, 0, -10]} intensity={0.2} color="#ff8844" />
+      <Canvas
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 1,
+          background: "transparent",
+          pointerEvents: "auto",
+        }}
+        gl={{ alpha: true, antialias: true }}
+        dpr={[1, 2]}
+        camera={{ fov: 70, position: [0, 0, 22], near: 0.1, far: 200 }}
+        onCreated={({ camera }) => {
+          (window as any).__camera = camera;
+          zoomState.current.originalCamPos = camera.position.clone();
+        }}
+      >
+        {/* Lighting */}
+        <ambientLight intensity={0.8} />
+        <directionalLight position={[0, 5, 15]} intensity={0.6} color="#fff8f0" />
+        {/* wall fill */}
+        <pointLight position={[6, 6, 8]} intensity={1.4} color="#ffffff" />
+        <pointLight position={[-6, -4, 3]} intensity={0.5} color="#3a3aff" />
+        <pointLight position={[0, 0, -10]} intensity={0.2} color="#ff8844" />
 
-      {/*
+        {/*
         OrbitControls — restores full mouse/touchpad navigation.
         enableDamping gives smooth deceleration after gestures.
         The d-pad adjusts controls.target (via CameraController) rather than
         camera.position, so both input methods coexist without conflict.
       */}
-      <OrbitControls
-        ref={controlsRef}
-        enableDamping
-        dampingFactor={0.06}
-        enableZoom
-        enablePan
-        enableRotate={false}
-        minAzimuthAngle={0}
-        maxAzimuthAngle={0}
-        minPolarAngle={Math.PI / 2}
-        maxPolarAngle={Math.PI / 2}
-        screenSpacePanning={true}
-        mouseButtons={{
-          LEFT: THREE.MOUSE.PAN,
-          MIDDLE: THREE.MOUSE.DOLLY,
-          RIGHT: THREE.MOUSE.PAN,
-        }}
-        touches={{
-          ONE: THREE.TOUCH.PAN,
-          TWO: THREE.TOUCH.DOLLY_PAN,
-        }}
-        panSpeed={0.8}
-        zoomSpeed={0.8}
-        minDistance={3}
-        maxDistance={50}
-        makeDefault
-      />
-
-      {/* Zoom controller and original lookat capture */}
-      <ZoomController
-        zoomState={zoomState}
-        controlsRef={controlsRef}
-        pressedDirection={pressedDirection}
-        onDiscSlide={() => {
-          setDiscSlideActive(true);
-          onDiscSlide?.();
-        }}
-        onZoomComplete={() => {}}
-      />
-      <OriginCapture zoomState={zoomState} controlsRef={controlsRef} />
-
-      {/* One disc per unique album, sorted largest → smallest (centre → outskirts) */}
-      {albumGroups.map((group, i) => {
-        const { x, y, scale } = positions[i] || { x: 0, y: 0, scale: 1 };
-        const isExpanded = expandedAlbumId === group.albumId;
-        const isBlurred = expandedAlbumId !== null && expandedAlbumId !== group.albumId;
-        return (
-          <group
-            key={group.albumId}
-            position={[x, y, 0.1]}
-            rotation={[0, 0, 0]}
-          >
-            <AlbumCover
-              albumCoverUrl={group.albumCoverUrl}
-              position={[0, 0, 0]}
-              trackCount={group.trackCount}
-              index={i}
-              scale={scale}
-              isExpanded={isExpanded}
-              discSlideActive={isExpanded && discSlideActive}
-              isBlurred={isBlurred}
-              albumName={group.albumName}
-              onExpand={() => handleExpand(group.albumId, group.albumName, group.albumCoverUrl, group.tracks, x, y, group.trackCount)}
-            />
-          </group>
-        );
-      })}
-
-      {/* Collapse on background click or Escape */}
-      <mesh
-        position={[0, 0, -0.5]}
-        visible={!!expandedAlbumId}
-        onPointerDown={collapse}
-      >
-        <planeGeometry args={[WALL_WIDTH, WALL_HEIGHT]} />
-        <meshBasicMaterial transparent opacity={0} />
-      </mesh>
-
-      {/* Collapse on Escape key */}
-      {expandedAlbumId && (
-        <primitive
-          object={{}}
-          attach={null}
-          onUpdate={() => {
-            const handler = (e: KeyboardEvent) => {
-              if (e.key === "Escape") collapse();
-            };
-            window.addEventListener("keydown", handler);
-            return () => window.removeEventListener("keydown", handler);
+        <OrbitControls
+          ref={controlsRef}
+          enableDamping
+          dampingFactor={0.06}
+          enableZoom
+          enablePan
+          enableRotate={false}
+          minAzimuthAngle={0}
+          maxAzimuthAngle={0}
+          minPolarAngle={Math.PI / 2}
+          maxPolarAngle={Math.PI / 2}
+          screenSpacePanning={true}
+          mouseButtons={{
+            LEFT: THREE.MOUSE.PAN,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.PAN,
           }}
+          touches={{
+            ONE: THREE.TOUCH.PAN,
+            TWO: THREE.TOUCH.DOLLY_PAN,
+          }}
+          panSpeed={0.8}
+          zoomSpeed={0.8}
+          minDistance={3}
+          maxDistance={50}
+          makeDefault
         />
+
+        {/* Zoom controller and original lookat capture */}
+        <ZoomController
+          zoomState={zoomState}
+          controlsRef={controlsRef}
+          pressedDirection={pressedDirection}
+          onDiscSlide={() => {
+            setDiscSlideActive(true);
+            onDiscSlide?.();
+          }}
+          onZoomComplete={() => { }}
+        />
+        <OriginCapture zoomState={zoomState} controlsRef={controlsRef} />
+
+        {/* One disc per unique album, sorted largest → smallest (centre → outskirts) */}
+        {albumGroups.map((group, i) => {
+          const { x, y, scale } = positions[i] || { x: 0, y: 0, scale: 1 };
+          const isExpanded = expandedAlbumId === group.albumId;
+          const isBlurred = expandedAlbumId !== null && expandedAlbumId !== group.albumId;
+          return (
+            <group
+              key={group.albumId}
+              position={[x, y, 0.1]}
+              rotation={[0, 0, 0]}
+            >
+              <AlbumCover
+                albumCoverUrl={group.albumCoverUrl}
+                position={[0, 0, 0]}
+                trackCount={group.trackCount}
+                index={i}
+                scale={scale}
+                isExpanded={isExpanded}
+                discSlideActive={isExpanded && discSlideActive}
+                isBlurred={isBlurred}
+                albumName={group.albumName}
+                onExpand={() => handleExpand(group.albumId, group.albumName, group.albumCoverUrl, group.tracks, x, y, group.trackCount)}
+              />
+            </group>
+          );
+        })}
+
+        {/* Collapse on background click or Escape */}
+        <mesh
+          position={[0, 0, -0.5]}
+          visible={!!expandedAlbumId}
+          onPointerDown={collapse}
+        >
+          <planeGeometry args={[WALL_WIDTH, WALL_HEIGHT]} />
+          <meshBasicMaterial transparent opacity={0} />
+        </mesh>
+
+        {/* Collapse on Escape key */}
+        {expandedAlbumId && (
+          <primitive
+            object={{}}
+            attach={null}
+            onUpdate={() => {
+              const handler = (e: KeyboardEvent) => {
+                if (e.key === "Escape") collapse();
+              };
+              window.addEventListener("keydown", handler);
+              return () => window.removeEventListener("keydown", handler);
+            }}
+          />
+        )}
+
+        {/* WALL — customize color/texture/material here  */}
+        <Suspense fallback={
+          <mesh position={[0, 0, -3]}>
+            <planeGeometry args={[120, 70]} />
+            <meshStandardMaterial color="#eeebe7" roughness={0.85} metalness={0.0} />
+          </mesh>
+        }>
+          <WallBackground />
+        </Suspense>
+      </Canvas>
+      {/* Back Arrow Overlay */}
+      {expandedAlbumId && (
+        <div
+          onClick={collapse}
+          style={{
+            position: "absolute",
+            top: "40px",
+            left: "40px",
+            width: "48px",
+            height: "48px",
+            backgroundColor: "rgba(0,0,0,0.4)",
+            backdropFilter: "blur(12px)",
+            borderRadius: "50%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            zIndex: 50,
+            border: "1px solid rgba(255,255,255,0.1)",
+            transition: "all 0.2s ease"
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.15)";
+            e.currentTarget.style.transform = "scale(1.05)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.4)";
+            e.currentTarget.style.transform = "scale(1)";
+          }}
+          title="Go Back"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </div>
       )}
 
-      {/* WALL — customize color/texture/material here  */}
-      <mesh position={[0, 0, -3]}>
-        <planeGeometry args={[120, 70]} />
-        <meshStandardMaterial
-          color="#eeebe7"
-          roughness={0.85}
-          metalness={0.0}
-        />
-      </mesh>
-    </Canvas>
-    {/* Back Arrow Overlay */}
-    {expandedAlbumId && (
-      <div 
-        onClick={collapse}
-        style={{
+      {isFetchingMore && (
+        <div style={{
           position: "absolute",
-          top: "40px",
-          left: "40px",
-          width: "48px",
-          height: "48px",
-          backgroundColor: "rgba(0,0,0,0.4)",
-          backdropFilter: "blur(12px)",
-          borderRadius: "50%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          cursor: "pointer",
-          zIndex: 50,
-          border: "1px solid rgba(255,255,255,0.1)",
-          transition: "all 0.2s ease"
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.15)";
-          e.currentTarget.style.transform = "scale(1.05)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.4)";
-          e.currentTarget.style.transform = "scale(1)";
-        }}
-        title="Go Back"
-      >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="15 18 9 12 15 6"></polyline>
-        </svg>
-      </div>
-    )}
-
-    {isFetchingMore && (
-      <div style={{
-        position: "absolute",
-        bottom: "20px",
-        right: "20px",
-        color: "white",
-        background: "rgba(0,0,0,0.6)",
-        padding: "8px 16px",
-        borderRadius: "8px",
-        fontFamily: "Inter, sans-serif",
-        fontSize: "14px",
-        pointerEvents: "none",
-        zIndex: 10
-      }}>
-        Loading remaining albums...
-      </div>
-    )}
+          bottom: "20px",
+          right: "20px",
+          color: "white",
+          background: "rgba(0,0,0,0.6)",
+          padding: "8px 16px",
+          borderRadius: "8px",
+          fontFamily: "Inter, sans-serif",
+          fontSize: "14px",
+          pointerEvents: "none",
+          zIndex: 10
+        }}>
+          Loading remaining albums...
+        </div>
+      )}
     </>
   );
 }
