@@ -273,6 +273,29 @@ function WallBackground() {
   );
 }
 
+// Record player image overlaid on the wall, sitting on the table (bottom-right)
+function RecordPlayer() {
+  const tex = useTexture("/record_player.png");
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  // Width ~24 units, height ~19 units (preserving ~1.27:1 aspect of the source PNG)
+  // Positioned bottom-right on the table: x=35 (right side), y=-23 (table surface)
+  // z=-2.85 puts it just in front of the wall (wall is at z=-3)
+  return (
+    <mesh position={[48, -23, -2.85]}>
+      <planeGeometry args={[24, 19]} />
+      <meshStandardMaterial
+        map={tex}
+        transparent
+        alphaTest={0.05}
+        roughness={0.6}
+        metalness={0.1}
+      />
+    </mesh>
+  );
+}
+
 // VinylScene
 const MemoizedAlbumCover = memo(AlbumCover);
 
@@ -554,6 +577,7 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
           </mesh>
         }>
           <WallBackground />
+          <RecordPlayer />
         </Suspense>
       </Canvas>
       {/* Back Arrow Overlay */}
