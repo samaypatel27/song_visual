@@ -14,7 +14,7 @@
 "use client";
 
 import { use, useRef, useState, useCallback } from "react";
-import { ShaderBackground } from "@/components/ShaderBackground";
+// import { ShaderBackground } from "@/components/ShaderBackground";
 import { VinylScene, type PlaylistTrackEntry } from "@/components/VinylScene";
 import { DPadControls } from "@/components/DPadControls";
 import { TrackListPanel } from "@/components/TrackListPanel";
@@ -83,7 +83,7 @@ export default function PlaylistDetailPage({ params }: PageProps) {
 
     return (
         <>
-            <ShaderBackground />
+            {/* <ShaderBackground /> */}
 
             <VinylScene
                 playlistId={id}

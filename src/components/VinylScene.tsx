@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, memo } from "react";
+import { useEffect, useState, useRef, memo, useCallback, Suspense } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -248,6 +248,84 @@ function ZoomController({
   return null;
 }
 
+// Renders nothing, but its useEffect only fires once all sibling Suspense
+// children (album textures) have resolved — that's when we signal ready.
+function AlbumsReadySignal({ onReady }: { onReady: () => void }) {
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (!firedRef.current) {
+      firedRef.current = true;
+      onReady();
+    }
+  }, [onReady]);
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SKELETON LOADING PLACEHOLDERS
+// ─────────────────────────────────────────────────────────────────────────────
+// Generate skeleton positions using the same layout algorithm as real albums,
+// with representative track counts so sizes/spacing feel realistic.
+const SKELETON_GROUPS: AlbumGroup[] = [
+  3, 8, 5, 12, 2, 7, 4, 10, 3, 6, 8, 2, 5, 4, 7,
+].map((trackCount, i) => ({
+  albumId: `sk-${i}`, albumName: "", albumCoverUrl: "", trackCount,
+}));
+const SKELETON_LAYOUT = generatePositions(SKELETON_GROUPS, []);
+
+const SkeletonCover = memo(({ x, y, size, phaseOffset }: {
+  x: number; y: number; size: number; phaseOffset: number;
+}) => {
+  const matRef = useRef<THREE.MeshStandardMaterial>(null);
+
+  useFrame(({ clock }) => {
+    if (!matRef.current) return;
+    const t = Math.sin(clock.elapsedTime * 1.2 + phaseOffset) * 0.5 + 0.5;
+    const v = 0.18 + t * 0.09;
+    matRef.current.color.setRGB(v, v, v);
+  });
+
+  return (
+    <mesh position={[x, y, 0.15]}>
+      <boxGeometry args={[size, size, 0.12]} />
+      <meshStandardMaterial ref={matRef} roughness={0.9} metalness={0.05} transparent />
+    </mesh>
+  );
+});
+SkeletonCover.displayName = "SkeletonCover";
+
+// phase 'loading' — API loading or textures loading: continuous pulse 0.2 ↔ 1.0
+// phase 'exit'    — textures ready: fade out quickly to 0
+function SkeletonWall({ phase }: { phase: "loading" | "exit" }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const opRef = useRef(0);
+
+  useFrame(({ clock }) => {
+    if (phase === "exit") {
+      opRef.current = THREE.MathUtils.lerp(opRef.current, 0, 0.05);
+    } else {
+      // Pulse continuously between ~0.2 and 1.0
+      const pulse = 0.6 + 0.4 * Math.sin(clock.elapsedTime * 1.8);
+      opRef.current = THREE.MathUtils.lerp(opRef.current, pulse, 0.1);
+    }
+    if (!groupRef.current) return;
+    groupRef.current.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.isMesh) {
+        (mesh.material as THREE.MeshStandardMaterial).opacity = opRef.current;
+      }
+    });
+  });
+
+  return (
+    <group ref={groupRef}>
+      {SKELETON_LAYOUT.map((pos, i) => (
+        <SkeletonCover key={i} x={pos.x} y={pos.y} size={pos.size} phaseOffset={i * 0.8} />
+      ))}
+    </group>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SCENE
 // ─────────────────────────────────────────────────────────────────────────────
@@ -256,7 +334,10 @@ const MemoizedAlbumCover = memo(AlbumCover);
 export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDiscSlide, onCollapse }: VinylSceneProps) {
   const [albumGroups, setAlbumGroups] = useState<AlbumGroup[]>([]);
   const [positions, setPositions] = useState<any[]>([]);
-  const [isFetchingMore, setIsFetchingMore] = useState(false);
+
+  const [showSkeleton, setShowSkeleton] = useState(true);
+  const [albumsReady, setAlbumsReady] = useState(false);
+  const handleAlbumsReady = useCallback(() => setAlbumsReady(true), []);
   const controlsRef = useRef<OrbitControlsImpl>(null);
 
   // Expanded state
@@ -283,6 +364,8 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
   // ── Fetch ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!playlistId) return;
+    setAlbumsReady(false);
+    setShowSkeleton(true);
     const controller = new AbortController();
     let isMounted = true;
 
@@ -291,7 +374,6 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
         let offset = 0;
         let limit = 50;
         let total = 1;
-        setIsFetchingMore(true);
 
         let cumulativeGroups: AlbumGroup[] = [];
         let cumulativePositions: any[] = [];
@@ -342,16 +424,19 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
             const newPositions = generatePositions(newGroups, cumulativePositions);
             cumulativeGroups = [...cumulativeGroups, ...newGroups];
             cumulativePositions = [...cumulativePositions, ...newPositions];
-            setAlbumGroups(cumulativeGroups);
-            setPositions(cumulativePositions);
           }
 
           offset += limit;
         }
+
+        // Set state once after all pages are fetched so albums appear all at once
+        if (isMounted && cumulativeGroups.length > 0) {
+          setAlbumGroups(cumulativeGroups);
+          setPositions(cumulativePositions);
+        }
       } catch (err: any) {
         if (err.name !== "AbortError") console.error("[VinylScene] fetch error:", err);
       } finally {
-        if (isMounted) setIsFetchingMore(false);
       }
     };
 
@@ -361,6 +446,14 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
       controller.abort();
     };
   }, [playlistId]);
+
+  // Unmount skeleton after its fade-out animation completes (~900ms)
+  useEffect(() => {
+    if (albumsReady) {
+      const t = setTimeout(() => setShowSkeleton(false), 900);
+      return () => clearTimeout(t);
+    }
+  }, [albumsReady]);
 
   // ── Click handler — compute camera zoom target ─────────────────────────────
   const handleExpand = (
@@ -431,6 +524,33 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
 
   return (
     <>
+      {!albumsReady && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 2,
+          display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          pointerEvents: "none",
+        }}>
+          <div style={{ display: "flex", gap: 10 }}>
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{
+                width: 10, height: 10, borderRadius: "50%", background: "#1DB954",
+                animation: `vinyl-dot-pulse 1.4s ease-in-out ${i * 0.2}s infinite`,
+              }} />
+            ))}
+          </div>
+          <p style={{
+            color: "rgba(255,255,255,0.35)", fontSize: 13, marginTop: 16,
+            fontFamily: "Inter, system-ui, sans-serif", letterSpacing: "0.08em",
+          }}>Loading albums</p>
+          <style>{`
+            @keyframes vinyl-dot-pulse {
+              0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
+              40% { transform: scale(1); opacity: 1; }
+            }
+          `}</style>
+        </div>
+      )}
       <Canvas
         style={{ position: "fixed", inset: 0, zIndex: 1, background: "transparent", pointerEvents: "auto" }}
         gl={{ alpha: true, antialias: true }}
@@ -488,28 +608,37 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
         {/* Capture original lookAt after controls mount */}
         <OriginCapture zoomState={zoomState} controlsRef={controlsRef} />
 
-        {/* Album cards */}
-        {albumGroups.map((group, i) => {
-          const { x, y, scale } = positions[i] || { x: 0, y: 0, scale: 1 };
-          const isExpanded = expandedAlbumId === group.albumId;
-          const isBlurred = expandedAlbumId !== null && !isExpanded;
-          return (
-            <group key={group.albumId} position={[x, y, 0.1]}>
-              <MemoizedAlbumCover
-                albumCoverUrl={group.albumCoverUrl}
-                position={[0, 0, 0]}
-                trackCount={group.trackCount}
-                index={i}
-                scale={scale}
-                isExpanded={isExpanded}
-                discSlideActive={isExpanded && discSlideActive}
-                isBlurred={isBlurred}
-                albumName={group.albumName}
-                onExpand={() => handleExpand(group.albumId, group.albumName, group.albumCoverUrl, x, y, group.trackCount)}
-              />
-            </group>
-          );
-        })}
+        {/* Skeleton placeholders — fade out once album textures have all loaded */}
+        {showSkeleton && (
+          <SkeletonWall phase={albumsReady ? "exit" : "loading"} />
+        )}
+
+        {/* Album cards — wrapped in Suspense so useTexture suspensions are caught.
+            AlbumsReadySignal only mounts (and fires) once every texture has resolved. */}
+        <Suspense fallback={null}>
+          {albumGroups.map((group, i) => {
+            const { x, y, scale } = positions[i] || { x: 0, y: 0, scale: 1 };
+            const isExpanded = expandedAlbumId === group.albumId;
+            const isBlurred = expandedAlbumId !== null && !isExpanded;
+            return (
+              <group key={group.albumId} position={[x, y, 0.1]}>
+                <MemoizedAlbumCover
+                  albumCoverUrl={group.albumCoverUrl}
+                  position={[0, 0, 0]}
+                  trackCount={group.trackCount}
+                  index={i}
+                  scale={scale}
+                  isExpanded={isExpanded}
+                  discSlideActive={isExpanded && discSlideActive}
+                  isBlurred={isBlurred}
+                  albumName={group.albumName}
+                  onExpand={() => handleExpand(group.albumId, group.albumName, group.albumCoverUrl, x, y, group.trackCount)}
+                />
+              </group>
+            );
+          })}
+          {albumGroups.length > 0 && <AlbumsReadySignal onReady={handleAlbumsReady} />}
+        </Suspense>
 
         {/* Background click collapses */}
         <mesh
@@ -528,17 +657,6 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
         </mesh>
       </Canvas>
 
-      {isFetchingMore && (
-        <div style={{
-          position: "absolute", bottom: "20px", right: "20px",
-          color: "white", background: "rgba(0,0,0,0.6)",
-          padding: "8px 16px", borderRadius: "8px",
-          fontFamily: "Inter, sans-serif", fontSize: "14px",
-          pointerEvents: "none", zIndex: 10,
-        }}>
-          Loading remaining albums...
-        </div>
-      )}
     </>
   );
 }

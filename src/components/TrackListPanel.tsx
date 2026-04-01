@@ -375,6 +375,20 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
           font-size: 0.82em; font-weight: 300;
           letter-spacing: 0.06em; color: rgba(255,255,255,0.25);
         }
+        @keyframes tlp-shimmer {
+          0% { background-position: 200% center; }
+          100% { background-position: -200% center; }
+        }
+        .tlp-skeleton-row {
+          display: flex; align-items: center;
+          height: 44px; padding-right: 20px;
+        }
+        .tlp-skeleton-bar {
+          border-radius: 4px;
+          background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.05) 75%);
+          background-size: 200% 100%;
+          animation: tlp-shimmer 1.8s infinite;
+        }
       `}</style>
 
       {/* Per-album dynamic styles: dash color driven by palette */}
@@ -401,7 +415,14 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
 
             <div className="tlp-list-wrap">
               {!dataReady ? (
-                <div className="tlp-loading">Loading tracklist…</div>
+                Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="tlp-skeleton-row" style={{ animationDelay: `${i * 0.07}s` }}>
+                    <div className="tlp-dash" />
+                    <div className="tlp-skeleton-bar" style={{ width: 20, height: 10, marginRight: 10, animationDelay: `${i * 0.07}s` }} />
+                    <div className="tlp-skeleton-bar" style={{ flex: 1, height: 12, marginRight: 10, animationDelay: `${i * 0.07 + 0.1}s` }} />
+                    <div className="tlp-skeleton-bar" style={{ width: 36, height: 10, animationDelay: `${i * 0.07 + 0.2}s` }} />
+                  </div>
+                ))
               ) : tracks.length === 0 ? (
                 <div className="tlp-loading">No tracks in this playlist</div>
               ) : (
