@@ -17,6 +17,11 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Dev tools state
+    const [trackId, setTrackId] = useState("");
+    const [playStatus, setPlayStatus] = useState<{ type: "success" | "warn" | "error"; msg: string } | null>(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+
     // Redirect unauthenticated users to home
     useEffect(() => {
         if (status === "unauthenticated") router.replace("/");
@@ -35,6 +40,38 @@ export default function DashboardPage() {
             .catch((err: Error) => setError(err.message))
             .finally(() => setLoading(false));
     }, [status]);
+
+    const handlePlay = async () => {
+        if (!trackId.trim()) return;
+        setIsPlaying(true);
+        setPlayStatus(null);
+        try {
+            const res = await fetch("/api/spotify/play", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ trackId: trackId.trim() }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                const deviceLabel = data.device ? ` on ${data.device}` : "";
+                setPlayStatus({ type: "success", msg: `✓ Playing${deviceLabel}` });
+            } else if (data.error === "reauth_required") {
+                setPlayStatus({ type: "error", msg: "✗ Session missing playback scope — sign out and sign back in, then retry." });
+            } else if (data.error === "no_available_device") {
+                setPlayStatus({ type: "warn", msg: "⚠ No Spotify devices found — open Spotify on your phone, desktop, or web player first" });
+            } else if (data.error === "no_active_device") {
+                setPlayStatus({ type: "warn", msg: "⚠ Device disappeared mid-request — try again" });
+            } else if (data.error === "premium_required") {
+                setPlayStatus({ type: "error", msg: "✗ Spotify Premium required" });
+            } else {
+                setPlayStatus({ type: "error", msg: `✗ Error: ${data.message ?? data.error ?? "Unknown error"}` });
+            }
+        } catch (e: any) {
+            setPlayStatus({ type: "error", msg: `✗ Error: ${e.message}` });
+        } finally {
+            setIsPlaying(false);
+        }
+    };
 
     if (status === "loading" || status === "unauthenticated") return null;
 
@@ -70,6 +107,47 @@ export default function DashboardPage() {
                     )}
                 </ul>
             )}
+
+            {/* Dev Tools — collapsed by default */}
+            <hr style={styles.divider} />
+            <details style={styles.devTools}>
+                <summary style={styles.devSummary}>Dev Tools</summary>
+                <div style={styles.devBody}>
+                    <p style={styles.devLabel}>Playback Test</p>
+                    {/* To test: open Spotify on any device (phone, desktop, web player at open.spotify.com)
+                        THEN enter a track ID and click Play. The song will play on whichever device is active. */}
+                    <div style={styles.devRow}>
+                        <input
+                            type="text"
+                            value={trackId}
+                            onChange={(e) => setTrackId(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handlePlay(); }}
+                            placeholder="Enter Spotify Track ID..."
+                            style={styles.devInput}
+                        />
+                        <button
+                            onClick={handlePlay}
+                            disabled={isPlaying || !trackId.trim()}
+                            style={{
+                                ...styles.devButton,
+                                ...(isPlaying ? styles.devButtonDisabled : {}),
+                            }}
+                        >
+                            {isPlaying ? "Playing..." : "Play"}
+                        </button>
+                    </div>
+                    {playStatus && (
+                        <p style={{
+                            ...styles.devStatus,
+                            color: playStatus.type === "success" ? "#1db954"
+                                : playStatus.type === "warn" ? "#f6ad55"
+                                : "#e53e3e",
+                        }}>
+                            {playStatus.msg}
+                        </p>
+                    )}
+                </div>
+            </details>
         </main>
     );
 }
@@ -126,5 +204,66 @@ const styles: Record<string, React.CSSProperties> = {
         textOverflow: "ellipsis",
         whiteSpace: "nowrap",
         background: "#fafafa",
+    },
+    // Dev tools
+    divider: {
+        border: "none",
+        borderTop: "1px solid rgba(0,0,0,0.1)",
+        margin: "2.5rem 0 1.5rem",
+    },
+    devTools: {
+        marginBottom: "2rem",
+    },
+    devSummary: {
+        cursor: "pointer",
+        fontSize: "0.85rem",
+        color: "#888",
+        userSelect: "none" as const,
+    },
+    devBody: {
+        marginTop: "1rem",
+        display: "flex",
+        flexDirection: "column" as const,
+        gap: "0.6rem",
+    },
+    devLabel: {
+        margin: 0,
+        fontSize: "0.8em",
+        opacity: 0.5,
+        color: "#333",
+    },
+    devRow: {
+        display: "flex",
+        alignItems: "center",
+        gap: "0.5rem",
+    },
+    devInput: {
+        border: "1px solid rgba(0,0,0,0.2)",
+        background: "#f9f9f9",
+        color: "#111",
+        borderRadius: "6px",
+        padding: "8px 12px",
+        width: "280px",
+        fontSize: "0.85rem",
+        outline: "none",
+    },
+    devButton: {
+        background: "#1db954",
+        color: "white",
+        fontWeight: 600,
+        borderRadius: "6px",
+        padding: "8px 16px",
+        cursor: "pointer",
+        border: "none",
+        fontSize: "0.85rem",
+    },
+    devButtonDisabled: {
+        background: "#148a3c",
+        cursor: "not-allowed",
+        opacity: 0.7,
+    },
+    devStatus: {
+        margin: 0,
+        fontSize: "0.82rem",
     },
 };

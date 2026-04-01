@@ -2,14 +2,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
-// Module-level in-memory cache
-interface CacheEntry {
-    data: any;
-    timestamp: number;
-}
-const localCache = new Map<string, CacheEntry>();
-const CACHE_TTL_MS = 60000; // 60 seconds
-
 // NOTE: Any time scopes are changed, users must re-authenticate.
 // Existing tokens will NOT gain new scopes retroactively.
 
@@ -56,17 +48,6 @@ export async function GET(
     const { searchParams } = new URL(req.url);
     const limit = parseInt(searchParams.get("limit") || "50", 10);
     const offset = parseInt(searchParams.get("offset") || "0", 10);
-
-    // Cache layer — module-level Map keyed by id, limit, and offset
-    const cacheKey = `${id}_${limit}_${offset}`;
-    const cachedEntry = localCache.get(cacheKey);
-
-    if (cachedEntry && Date.now() - cachedEntry.timestamp < CACHE_TTL_MS) {
-        console.log(`[playlist-tracks] Cache HIT (local) — returning paginated tracks for limit=${limit} offset=${offset}`);
-        return NextResponse.json(cachedEntry.data);
-    }
-
-    console.log(`[playlist-tracks] Cache MISS (local) — fetching from Spotify for limit=${limit} offset=${offset}`);
 
     const headers = { Authorization: `Bearer ${session.accessToken}` };
     const url = `https://api.spotify.com/v1/playlists/${id}/items?limit=${limit}&offset=${offset}`;
@@ -138,17 +119,11 @@ export async function GET(
 
     console.log(`[playlist-tracks] valid covers: ${validCover} | missing: ${missingCover} | null: ${skippedNull} | episodes: ${skippedEpisode} | final: ${tracks.length}`);
 
-    // Construct augmented response payload
-    const responsePayload = {
+    return NextResponse.json({
         tracks,
         total: page.total,
         limit: page.limit || limit,
         offset: page.offset || offset,
         next: page.next
-    };
-
-    // Store in internal cache
-    localCache.set(cacheKey, { data: responsePayload, timestamp: Date.now() });
-    
-    return NextResponse.json(responsePayload);
+    });
 }
