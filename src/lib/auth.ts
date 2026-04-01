@@ -73,6 +73,10 @@ export const authOptions: NextAuthOptions = {
                         "user-read-private",
                         "playlist-read-private",
                         "playlist-read-collaborative",
+                        // Required for Web Playback SDK and playback control endpoints
+                        "user-modify-playback-state",
+                        // Required for GET /me/player/devices and GET /me/player
+                        "user-read-playback-state",
                     ].join(" "),
                 },
             },
