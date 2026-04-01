@@ -20,6 +20,7 @@ interface Track {
 }
 
 export interface PlaylistTrackEntry {
+  trackId: string;
   trackNumber: number;
   trackName: string;
   durationMs: number;
@@ -49,14 +50,14 @@ const groupByAlbum = (tracks: Track[]): AlbumGroup[] => {
     if (map.has(track.albumId)) {
       const g = map.get(track.albumId)!;
       g.trackCount += 1;
-      g.tracks.push({ trackNumber: track.trackNumber, trackName: track.trackName, durationMs: track.durationMs });
+      g.tracks.push({ trackId: track.trackId, trackNumber: track.trackNumber, trackName: track.trackName, durationMs: track.durationMs });
     } else {
       map.set(track.albumId, {
         albumId: track.albumId,
         albumName: track.albumName,
         albumCoverUrl: track.albumCoverUrl,
         trackCount: 1,
-        tracks: [{ trackNumber: track.trackNumber, trackName: track.trackName, durationMs: track.durationMs }],
+        tracks: [{ trackId: track.trackId, trackNumber: track.trackNumber, trackName: track.trackName, durationMs: track.durationMs }],
       });
     }
   });
@@ -345,7 +346,7 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
           if (!data.tracks) break;
 
           data.tracks.forEach((t: Track) => {
-            const trackEntry = { trackNumber: t.trackNumber, trackName: t.trackName, durationMs: t.durationMs };
+            const trackEntry = { trackId: t.trackId, trackNumber: t.trackNumber, trackName: t.trackName, durationMs: t.durationMs };
             if (globalChunkMap.has(t.albumId)) {
               const group = globalChunkMap.get(t.albumId)!;
               group.trackCount++;

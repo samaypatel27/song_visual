@@ -20,6 +20,9 @@ import { DPadControls } from "@/components/DPadControls";
 import { TrackListPanel } from "@/components/TrackListPanel";
 import type { Track } from "@/components/TrackListPanel";
 
+// Extend TrackListPanel Track to include optional trackId (passed from VinylScene)
+// PlaylistTrackEntry is structurally compatible — cast directly
+
 type Direction = "up" | "down" | "left" | "right" | "reset";
 
 interface PageProps {
@@ -57,8 +60,8 @@ export default function PlaylistDetailPage({ params }: PageProps) {
         setPanelAlbumName(albumName);
         setPanelAlbumCoverUrl(albumCoverUrl);
         setPanelDataReady(false);  // reset while data loads
-        // PlaylistTrackEntry is structurally identical to Track — cast directly
-        setPanelTracks(playlistTracks as Track[]);
+        // PlaylistTrackEntry includes trackId — cast directly to Track
+        setPanelTracks(playlistTracks as unknown as Track[]);
         setPanelDataReady(true);  // data received, even if 0 tracks
 
         console.log(`[Click] panel tracks set — count: ${playlistTracks.length} | timestamp: ${Date.now()} | elapsed: ${Date.now() - ts}ms`);
