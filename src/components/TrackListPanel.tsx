@@ -1,4 +1,33 @@
+// ── DO NOT READ THIS FILE IN FULL UNLESS REQUIRED ──────────────────────────
+// If the following details are enough for your task, stop here.
+//
+// FILE: src/components/TrackListPanel.tsx
+// PURPOSE: Right-side sliding panel that displays the track list for an expanded album.
+//   Includes its own R3F Canvas running a GLSL blob shader as the panel background.
+//
+// EXPORTED:
+//   TrackListPanel  (component)
+//   Track           (interface: { trackId?, trackNumber, trackName, durationMs })
+//
+// PROPS (TrackListPanelProps):
+//   albumName       — title shown in panel header
+//   albumCoverUrl   — used for palette extraction (dynamic accent color) and passed to onPlaySuccess
+//   tracks          — Track[] array (populated from VinylScene's in-memory accumulator)
+//   visible         — controls slide-in/out CSS transition
+//   dataReady       — when false shows "Loading tracklist…"; when true renders track rows
+//   onClose?        — optional close handler
+//
+// INTERNAL SYSTEMS:
+//   Toast system    — bottom-left toasts (success/warn/error/loading) with auto-dismiss timers
+//   Palette         — extracts 2 dominant colors from album art (32×32 canvas downsample)
+//   handlePlay      — POST /api/spotify/play; maps API error codes to toast messages
+//   playingTrackId  — debounces double-clicks on the play button
+//
+// STYLING: all CSS via <style> injection with class prefix "tlp-" to avoid collisions
+// ─────────────────────────────────────────────────────────────────────────────
+
 "use client";
+
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";

@@ -92,6 +92,15 @@ export default function DashboardPage() {
 
             {!loading && !error && (
                 <ul style={styles.grid}>
+                    {/* Hall of Fame — pinned at top of the grid */}
+                    <li style={styles.card}>
+                        <Link
+                            href="/hall-of-fame"
+                            style={{ display: "block", color: "inherit", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        >
+                            🏆 Hall of Fame
+                        </Link>
+                    </li>
                     {playlists.map((pl) => (
                         <li key={pl.id} style={styles.card}>
                             <Link

@@ -77,6 +77,10 @@ export const authOptions: NextAuthOptions = {
                         "user-modify-playback-state",
                         // Required for GET /me/player/devices and GET /me/player
                         "user-read-playback-state",
+                        // Required for GET /me/top/artists and GET /me/top/tracks
+                        "user-top-read",
+                        // Required for GET /me/player/recently-played
+                        "user-read-recently-played",
                     ].join(" "),
                 },
             },
