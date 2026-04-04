@@ -327,16 +327,23 @@ function AlbumsReadySignal({ onReady }: { onReady: () => void }) {
 // SKELETON LOADING PLACEHOLDERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SKELETON_GROUPS: AlbumGroup[] = [
-  3, 8, 5, 12, 2, 7, 4, 10, 3, 6, 8, 2, 5, 4, 7,
-].map((trackCount, i) => ({
-  albumId: `sk-${i}`,
-  albumName: "",
-  albumCoverUrl: "",
-  trackCount,
-  tracks: [],
-}));
-const SKELETON_LAYOUT = generatePositions(SKELETON_GROUPS);
+// Representative track counts that give a realistic mix of album sizes.
+// Repeated cyclically when count exceeds the pattern length.
+const SKELETON_TRACK_PATTERN = [5, 10, 3, 8, 2, 7, 4, 12, 6, 3, 9, 2, 5, 8, 4];
+
+function buildSkeletonLayout(count: number) {
+  const groups: AlbumGroup[] = Array.from({ length: count }, (_, i) => ({
+    albumId: `sk-${i}`,
+    albumName: "",
+    albumCoverUrl: "",
+    trackCount: SKELETON_TRACK_PATTERN[i % SKELETON_TRACK_PATTERN.length],
+    tracks: [],
+  }));
+  return generatePositions(groups);
+}
+
+// Default layout used before the first API response arrives
+const DEFAULT_SKELETON_LAYOUT = buildSkeletonLayout(15);
 
 const SkeletonCover = memo(
   ({
@@ -374,7 +381,7 @@ const SkeletonCover = memo(
 );
 SkeletonCover.displayName = "SkeletonCover";
 
-function SkeletonWall({ phase }: { phase: "loading" | "exit" }) {
+function SkeletonWall({ phase, layout }: { phase: "loading" | "exit"; layout: ReturnType<typeof buildSkeletonLayout> }) {
   const groupRef = useRef<THREE.Group>(null);
   const opRef = useRef(0);
 
@@ -396,7 +403,7 @@ function SkeletonWall({ phase }: { phase: "loading" | "exit" }) {
 
   return (
     <group ref={groupRef}>
-      {SKELETON_LAYOUT.map((pos, i) => (
+      {layout.map((pos, i) => (
         <SkeletonCover
           key={i}
           x={pos.x}
@@ -426,6 +433,7 @@ export function VinylScene({
   const [positions, setPositions] = useState<{ x: number; y: number; scale: number }[]>([]);
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [albumsReady, setAlbumsReady] = useState(false);
+  const [skeletonLayout, setSkeletonLayout] = useState(DEFAULT_SKELETON_LAYOUT);
   const handleAlbumsReady = useCallback(() => setAlbumsReady(true), []);
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const [expandedAlbumId, setExpandedAlbumId] = useState<string | null>(null);
@@ -459,6 +467,7 @@ export function VinylScene({
         let limit = 50;
         let total = 1;
         const globalChunkMap = new Map<string, AlbumGroup>();
+        let firstPage = true;
 
         while (offset < total && isMounted) {
           const res = await fetch(
@@ -493,6 +502,20 @@ export function VinylScene({
               });
             }
           });
+
+          // After the first page, estimate total album count and resize the skeleton
+          if (firstPage && isMounted) {
+            firstPage = false;
+            const pageAlbumCount = globalChunkMap.size;
+            const pageTrackCount = data.tracks.length;
+            if (pageAlbumCount > 0 && pageTrackCount > 0) {
+              const estimated = Math.max(
+                pageAlbumCount,
+                Math.round(pageAlbumCount * (total / pageTrackCount))
+              );
+              setSkeletonLayout(buildSkeletonLayout(estimated));
+            }
+          }
 
           offset += limit;
         }
@@ -711,7 +734,7 @@ export function VinylScene({
 
         {/* Skeleton placeholders — fade out once textures have loaded */}
         {showSkeleton && (
-          <SkeletonWall phase={albumsReady ? "exit" : "loading"} />
+          <SkeletonWall phase={albumsReady ? "exit" : "loading"} layout={skeletonLayout} />
         )}
 
         {/* Album cards inside Suspense so useTexture suspensions are caught.
