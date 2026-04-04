@@ -33,7 +33,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 
-// ─── GLSL Shader ────────────────────────────────────────────────────────────
+// ─── GLSL Shader ─────────────────────────────────────────────────────────────
 
 const fragmentShader = `
 uniform float uTime;
@@ -68,20 +68,20 @@ float snoise(vec2 v) {
 }
 
 void main() {
-    float t = uTime * 0.05; 
+    float t = uTime * 0.05;
     vec2 pos = vUv * 1.5;
 
     float n1 = snoise(pos + t);
     float n2 = snoise(pos * 2.0 - t * 0.8);
     float n3 = snoise(pos * 4.0 + t * 1.2);
-    
+
     float n = n1 * 0.5 + n2 * 0.25 + n3 * 0.125;
-    n = n * 0.5 + 0.5; 
-    
+    n = n * 0.5 + 0.5;
+
     vec3 colorBase = vec3(0.0, 0.0, 0.0);
-    vec3 colorNavy = vec3(0.039, 0.039, 0.102); 
-    vec3 colorPurple = vec3(0.102, 0.102, 0.227); 
-    
+    vec3 colorNavy = vec3(0.039, 0.039, 0.102);
+    vec3 colorPurple = vec3(0.102, 0.102, 0.227);
+
     vec3 finalColor = mix(colorBase, colorNavy, smoothstep(0.2, 0.5, n));
     finalColor = mix(finalColor, colorPurple, smoothstep(0.5, 0.8, n));
 
@@ -99,9 +99,7 @@ void main() {
 
 function BlobShader() {
     const materialRef = useRef<THREE.ShaderMaterial>(null);
-    const uniforms = useMemo(() => ({
-        uTime: { value: 0 }
-    }), []);
+    const uniforms = useMemo(() => ({ uTime: { value: 0 } }), []);
 
     useFrame((state) => {
         if (materialRef.current) {
@@ -124,7 +122,7 @@ function BlobShader() {
     );
 }
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface Track {
     trackId?: string;
@@ -147,7 +145,7 @@ interface PaletteColors {
     secondary: string; // "R,G,B"
 }
 
-// ─── Toast system ────────────────────────────────────────────────────────────
+// ─── Toast system ─────────────────────────────────────────────────────────────
 
 type ToastType = "success" | "warn" | "error" | "loading";
 
@@ -180,7 +178,6 @@ function ToastIcon({ type }: { type: ToastType }) {
             <path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke="rgba(248,113,113,1)" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
     );
-    // loading spinner
     return (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ animation: "tlp-spin 0.8s linear infinite" }}>
             <circle cx="8" cy="8" r="6" stroke="rgba(200,160,80,0.2)" strokeWidth="1.5" />
@@ -240,7 +237,6 @@ function ToastBar({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: numb
                         }}
                         onClick={() => onDismiss(toast.id)}
                     >
-                        {/* Content row */}
                         <div style={{
                             display: "flex",
                             alignItems: "center",
@@ -260,17 +256,10 @@ function ToastBar({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: numb
                                 {toast.message}
                             </span>
                         </div>
-                        {/* Progress bar */}
-                        <div style={{
-                            height: "2px",
-                            background: `rgba(${ac},0.12)`,
-                            position: "relative",
-                        }}>
+                        <div style={{ height: "2px", background: `rgba(${ac},0.12)`, position: "relative" }}>
                             <div style={{
                                 position: "absolute",
-                                left: 0,
-                                top: 0,
-                                height: "100%",
+                                left: 0, top: 0, height: "100%",
                                 width: `${(1 - progress) * 100}%`,
                                 background: `linear-gradient(to right, rgba(${ac},0.3), rgba(${ac},0.8))`,
                                 transition: "width 50ms linear",
@@ -284,7 +273,7 @@ function ToastBar({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: numb
     );
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDuration(ms: number): string {
     const totalSec = Math.floor(ms / 1000);
@@ -377,7 +366,7 @@ async function extractPalette(url: string): Promise<PaletteColors> {
     });
 }
 
-// ─── Main Component ──────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, dataReady }: TrackListPanelProps) {
     const [mounted, setMounted] = useState(false);
@@ -408,9 +397,7 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
 
     // Cleanup timers on unmount
     useEffect(() => {
-        return () => {
-            toastTimersRef.current.forEach(t => clearTimeout(t));
-        };
+        return () => { toastTimersRef.current.forEach(t => clearTimeout(t)); };
     }, []);
 
     const dismissToast = useCallback((id: number) => {
@@ -439,7 +426,7 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
             addToast("error", "No track ID available for this track.");
             return;
         }
-        if (playingTrackId === track.trackId) return; // debounce double-click
+        if (playingTrackId === track.trackId) return;
 
         setPlayingTrackId(track.trackId);
         const loadingId = addToast("loading", `Starting "${track.trackName}"…`, 0);
@@ -496,6 +483,10 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
                 @keyframes tlp-toast-in {
                     from { opacity: 0; transform: translateY(12px) scale(0.96); }
                     to   { opacity: 1; transform: translateY(0) scale(1); }
+                }
+                @keyframes tlp-shimmer {
+                    0%   { background-position: 200% center; }
+                    100% { background-position: -200% center; }
                 }
                 .tlp-outer {
                     position: fixed;
@@ -586,8 +577,8 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
                     box-shadow: 0 0 0px transparent;
                     transition: height 200ms ease-out, box-shadow 200ms ease-out, background 200ms ease-out;
                 }
-                .tlp-row:hover::before { 
-                    height: 44px; 
+                .tlp-row:hover::before {
+                    height: 44px;
                     box-shadow: 0 0 8px rgba(200,160,80,0.5);
                     transition: height 120ms ease-out, box-shadow 120ms ease-out, background 120ms ease-out;
                 }
@@ -607,7 +598,7 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
                     overflow: hidden; text-overflow: ellipsis;
                     transition: color 200ms ease-out, letter-spacing 200ms ease-out, transform 200ms ease-out, text-shadow 200ms ease-out;
                 }
-                .tlp-row:hover .tlp-title { 
+                .tlp-row:hover .tlp-title {
                     color: #f5e6c0;
                     letter-spacing: 0.06em;
                     transform: translateX(6px);
@@ -621,8 +612,8 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
                     flex-shrink: 0; padding-left: 8px;
                     transition: opacity 200ms ease-out, color 200ms ease-out;
                 }
-                .tlp-row:hover .tlp-dur { 
-                    opacity: 0.65; 
+                .tlp-row:hover .tlp-dur {
+                    opacity: 0.65;
                     color: #f5e6c0;
                     transition: opacity 180ms ease-out, color 180ms ease-out;
                 }
@@ -654,9 +645,7 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
                     opacity: 1 !important;
                     box-shadow: 0 0 12px rgba(200,160,80,0.35) !important;
                 }
-                .tlp-play-btn:active {
-                    transform: scale(0.95);
-                }
+                .tlp-play-btn:active { transform: scale(0.95); }
                 .tlp-play-btn.playing {
                     opacity: 1 !important;
                     background: rgba(200,160,80,0.12);
@@ -671,9 +660,19 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
                     font-size: 0.82em; font-weight: 300;
                     letter-spacing: 0.06em; color: rgba(255,255,255,0.25);
                 }
+                .tlp-skeleton-row {
+                    display: flex; align-items: center;
+                    height: 44px; padding-right: 20px;
+                }
+                .tlp-skeleton-bar {
+                    border-radius: 4px;
+                    background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.05) 75%);
+                    background-size: 200% 100%;
+                    animation: tlp-shimmer 1.8s infinite;
+                }
             `}</style>
 
-            {/* Per-album dynamic styles */}
+            {/* Per-album dynamic styles: dash color driven by palette */}
             <style>{`
                 .tlp-outer .tlp-dash { background: rgba(${p1},0.5); }
             `}</style>
@@ -697,7 +696,14 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
 
                         <div className="tlp-list-wrap">
                             {!dataReady ? (
-                                <div className="tlp-loading">Loading tracklist…</div>
+                                Array.from({ length: 8 }).map((_, i) => (
+                                    <div key={i} className="tlp-skeleton-row">
+                                        <div className="tlp-dash" />
+                                        <div className="tlp-skeleton-bar" style={{ width: 20, height: 10, marginRight: 10, animationDelay: `${i * 0.07}s` }} />
+                                        <div className="tlp-skeleton-bar" style={{ flex: 1, height: 12, marginRight: 10, animationDelay: `${i * 0.07 + 0.1}s` }} />
+                                        <div className="tlp-skeleton-bar" style={{ width: 36, height: 10, animationDelay: `${i * 0.07 + 0.2}s` }} />
+                                    </div>
+                                ))
                             ) : tracks.length === 0 ? (
                                 <div className="tlp-loading">No tracks in this playlist</div>
                             ) : (
@@ -738,7 +744,6 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
                 </div>
             </div>
 
-            {/* Toast notifications — bottom-left, outside TrackListPanel positioning */}
             <ToastBar toasts={toasts} onDismiss={dismissToast} />
         </>
     );

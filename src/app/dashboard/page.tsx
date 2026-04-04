@@ -87,8 +87,30 @@ export default function DashboardPage() {
                 </button>
             </header>
 
-            {loading && <p style={styles.status}>Loading playlists…</p>}
             {error && <p style={{ ...styles.status, color: "#e53e3e" }}>Error: {error}</p>}
+
+            {loading && !error && (
+                <>
+                    <style>{`
+                        @keyframes pl-shimmer {
+                            0% { background-position: -200% center; }
+                            100% { background-position: 200% center; }
+                        }
+                    `}</style>
+                    <ul style={styles.grid}>
+                        {Array.from({ length: 12 }).map((_, i) => (
+                            <li key={i} style={{
+                                height: "44px", borderRadius: "8px",
+                                border: "1px solid #e2e2e2",
+                                background: "linear-gradient(90deg, #eeeeee 25%, #f8f8f8 50%, #eeeeee 75%)",
+                                backgroundSize: "200% 100%",
+                                animation: `pl-shimmer 1.6s infinite`,
+                                animationDelay: `${i * 0.06}s`,
+                            }} />
+                        ))}
+                    </ul>
+                </>
+            )}
 
             {!loading && !error && (
                 <ul style={styles.grid}>
