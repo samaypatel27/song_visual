@@ -707,6 +707,108 @@ export function TrackListPanel({ albumName, albumCoverUrl, tracks, visible, data
                         </div>
                     </div>
                 </div>
+        .tlp-num {
+          font-family: 'Inter', system-ui, sans-serif;
+          font-size: 0.7em; font-weight: 400;
+          color: rgba(232, 213, 176, 0.35);
+          min-width: 24px; text-align: right;
+          padding-right: 10px; flex-shrink: 0;
+        }
+        .tlp-title {
+          font-family: 'Inter', system-ui, sans-serif;
+          font-size: 0.95em; font-weight: 700;
+          letter-spacing: 0.04em; color: #e8d5b0;
+          text-shadow: 0 1px 8px rgba(0,0,0,0.8);
+          flex: 1; white-space: nowrap;
+          overflow: hidden; text-overflow: ellipsis;
+          transition: color 200ms ease-out, letter-spacing 200ms ease-out, transform 200ms ease-out, text-shadow 200ms ease-out;
+        }
+        .tlp-row:hover .tlp-title { 
+          color: #f5e6c0;
+          letter-spacing: 0.07em;
+          transform: translateX(8px);
+          text-shadow: 0 0 16px rgba(200,160,80,0.4), 0 1px 8px rgba(0,0,0,0.8);
+          transition: color 180ms ease-out, letter-spacing 180ms ease-out, transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1), text-shadow 180ms ease-out;
+        }
+        .tlp-dur {
+          font-family: 'Inter', system-ui, sans-serif;
+          font-size: 0.75em; font-weight: 300;
+          color: rgba(232, 213, 176, 0.3);
+          flex-shrink: 0; padding-left: 10px;
+          transition: opacity 200ms ease-out, color 200ms ease-out;
+        }
+        .tlp-row:hover .tlp-dur { 
+          opacity: 0.65; 
+          color: #f5e6c0;
+          transition: opacity 180ms ease-out, color 180ms ease-out;
+        }
+        .tlp-loading {
+          display: flex; align-items: center; justify-content: center;
+          padding: 40px 20px;
+          font-family: 'Inter', system-ui, sans-serif;
+          font-size: 0.82em; font-weight: 300;
+          letter-spacing: 0.06em; color: rgba(255,255,255,0.25);
+        }
+        @keyframes tlp-shimmer {
+          0% { background-position: 200% center; }
+          100% { background-position: -200% center; }
+        }
+        .tlp-skeleton-row {
+          display: flex; align-items: center;
+          height: 44px; padding-right: 20px;
+        }
+        .tlp-skeleton-bar {
+          border-radius: 4px;
+          background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.05) 75%);
+          background-size: 200% 100%;
+          animation: tlp-shimmer 1.8s infinite;
+        }
+      `}</style>
+
+      {/* Per-album dynamic styles: dash color driven by palette */}
+      <style>{`
+        .tlp-outer .tlp-dash { background: rgba(${p1},0.5); }
+      `}</style>
+
+      <div className={`tlp-outer${entered ? " entered" : ""}`}>
+        <div className="tlp-card">
+          <div className="tlp-shader-bg">
+            <Canvas gl={{ antialias: false, alpha: false }} camera={{ position: [0, 0, 1] }}>
+              <BlobShader />
+            </Canvas>
+          </div>
+          <div className="tlp-header">
+            <p className="tlp-album-name">{albumName}</p>
+            {tracks.length > 0 && (
+              <p className="tlp-track-count">{tracks.length} tracks</p>
+            )}
+          </div>
+
+          <div className="tlp-body">
+            <div className="tlp-timeline" style={timelineStyle} />
+
+            <div className="tlp-list-wrap">
+              {!dataReady ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="tlp-skeleton-row" style={{ animationDelay: `${i * 0.07}s` }}>
+                    <div className="tlp-dash" />
+                    <div className="tlp-skeleton-bar" style={{ width: 20, height: 10, marginRight: 10, animationDelay: `${i * 0.07}s` }} />
+                    <div className="tlp-skeleton-bar" style={{ flex: 1, height: 12, marginRight: 10, animationDelay: `${i * 0.07 + 0.1}s` }} />
+                    <div className="tlp-skeleton-bar" style={{ width: 36, height: 10, animationDelay: `${i * 0.07 + 0.2}s` }} />
+                  </div>
+                ))
+              ) : tracks.length === 0 ? (
+                <div className="tlp-loading">No tracks in this playlist</div>
+              ) : (
+                tracks.map((track) => (
+                  <div className="tlp-row" key={track.trackNumber}>
+                    <div className="tlp-dash" />
+                    <span className="tlp-num">{track.trackNumber}</span>
+                    <span className="tlp-title">{track.trackName}</span>
+                    <span className="tlp-dur">{formatDuration(track.durationMs)}</span>
+                  </div>
+                ))
+              )}
             </div>
 
             {/* Toast notifications — bottom-left, outside TrackListPanel positioning */}
