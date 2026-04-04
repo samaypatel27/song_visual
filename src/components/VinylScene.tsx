@@ -1,3 +1,44 @@
+// ── DO NOT READ THIS FILE IN FULL UNLESS REQUIRED ──────────────────────────
+// If the following details are enough for your task, stop here.
+//
+// FILE: src/components/VinylScene.tsx
+// PURPOSE: The main 3D R3F scene rendered on the playlist detail page.
+//   A full-viewport Canvas (position:fixed, pointer-events:auto) that renders
+//   a wall of album covers, a record player, and handles camera zoom/pan.
+//
+// KEY SUB-COMPONENTS (all defined in this file):
+//   AlbumCover      — individual 3D sleeve + vinyl disc (imports from AlbumCover.tsx)
+//   RecordPlayer    — flat plane mesh at world [48, -23, -2.85] with record_player.png texture
+//   WallBackground  — plane mesh with a wood/brick texture behind the album wall
+//   ZoomController  — manages OrbitControls camera zoom-in on album click and zoom-out on collapse
+//
+// COORDINATE SYSTEM:
+//   Camera: PerspectiveCamera, fov 70, position [0, 0, 30]
+//   Album wall: albums laid out in a grid starting near world origin
+//   Record player: centered at world [48, -23, -2.85], geometry [24, 19]
+//   Platter center (visual): approx [47, -21.5, -2.85] based on PNG inspection
+//
+// STATE MACHINE (zoom):
+//   idle → expanding (zoom-in to clicked album) → expanded (panel visible) → collapsing → idle
+//   Managed via a single mutable ref object (z = zoom state) + setExpandedAlbumId
+//
+// EXPORTED:
+//   VinylScene          (component)
+//   PlaylistTrackEntry  (interface: { trackId, trackNumber, trackName, durationMs })
+//   AlbumGroup          (interface: { albumId, albumName, albumCoverUrl, tracks[] })
+//
+// PROPS (VinylSceneProps):
+//   playlistId          — Spotify playlist ID; drives the paginated track fetch
+//   pressedDirection    — ref for D-pad camera pan direction
+//   onAlbumExpand(albumId, albumName, albumCoverUrl, tracks[])  — fires on album click
+//   onDiscSlide()       — fires when vinyl disc slides out (after zoom completes)
+//   onCollapse()        — fires when zoom-out completes
+//
+// DATA LOADING: paginated GET /api/spotify/playlist-tracks?id=&offset=
+//   Tracks are accumulated in-memory per album into albumGroupsRef (a Map).
+//   New pages are fetched as the user pans (infinite scroll via isFetchingMore).
+// ─────────────────────────────────────────────────────────────────────────────
+
 "use client";
 
 import { useEffect, useState, useRef, memo, useCallback, Suspense } from "react";

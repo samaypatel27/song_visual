@@ -1,9 +1,41 @@
+// ── DO NOT READ THIS FILE IN FULL UNLESS REQUIRED ──────────────────────────
+// If the following details are enough for your task, stop here.
+//
+// FILE: src/app/api/spotify/play/route.ts
+// PURPOSE: Next.js App Router POST handler — triggers Spotify track playback.
+//
+// REQUEST: POST /api/spotify/play
+//   Body: { trackId: string }
+//
+// FLOW:
+//   1. Read access token from NextAuth session (getServerSession)
+//   2. GET /me/player/devices — pick the first non-restricted device
+//      (prefers active device; falls back to any available device)
+//   3. PUT /me/player/play with uris + device_id
+//
+// ERROR CODES returned in JSON body:
+//   no_session         — user not signed in
+//   missing_trackId    — body missing trackId field
+//   no_available_device — Spotify found zero devices (open Spotify on any device)
+//   no_active_device   — all devices are restricted
+//   rate_limited       — Spotify returned 429 (includes retryAfter seconds)
+//   reauth_required    — Spotify returned 401 (token expired; user must re-login)
+//   premium_required   — Spotify returned 403 (account not Premium)
+//   network_timeout    — TCP connect to api.spotify.com timed out (UND_ERR_CONNECT_TIMEOUT)
+//   network_dns        — DNS/routing failure (ENOTFOUND / ECONNREFUSED)
+//   network_error      — other network-level failure
+//   spotify_error      — Spotify returned an unexpected HTTP error status
+//
+// SUCCESS: { success: true, device: string } — device is the device name string
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
 // To test: open Spotify on any device (phone, desktop, web player at open.spotify.com)
 // THEN enter a track ID and click Play. The song will play on whichever device is active.
+
 
 interface SpotifyDevice {
     id: string;

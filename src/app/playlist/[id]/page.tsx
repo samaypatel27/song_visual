@@ -1,15 +1,31 @@
-// Playlist detail page — /playlist/[id]
+// ── DO NOT READ THIS FILE IN FULL UNLESS REQUIRED ──────────────────────────
+// If the following details are enough for your task, stop here.
 //
-// Layer order (z-index):
-//   0 — GLSL shader background   (ShaderBackground, position:fixed)
-//   1 — 3D vinyl records          (VinylScene, transparent R3F Canvas, position:fixed)
-//   10 — TrackListPanel           (position:fixed, right third)
-//   20 — D-pad navigation overlay (DPadControls, position:fixed, bottom-right)
+// FILE: src/app/playlist/[id]/page.tsx
+// PURPOSE: Playlist detail page — /playlist/[id]
+//   Renders the full interactive 3D album-wall experience for a single playlist.
 //
-// Track data pipeline:
-//   VinylScene accumulates {trackNumber, trackName, durationMs} per album in a ref
-//   as playlist-tracks pages are fetched.  On click, onAlbumExpand fires with that
-//   in-memory array → NO secondary Spotify API call needed.
+// LAYER ORDER (z-index):
+//   0  — ShaderBackground    (GLSL animated background, position:fixed)
+//   1  — VinylScene          (R3F Canvas with 3D album covers + record player, position:fixed)
+//   10 — TrackListPanel      (right-side slide-in panel showing tracks, position:fixed)
+//   20 — DPadControls        (on-screen d-pad for camera panning, currently commented out)
+//
+// KEY STATE:
+//   panelVisible / panelAlbumName / panelAlbumCoverUrl / panelTracks / panelDataReady
+//     — control TrackListPanel visibility and content
+//
+// KEY CALLBACKS passed down to VinylScene:
+//   onAlbumExpand  — fires when user clicks an album; populates panel data from in-memory tracks
+//   onDiscSlide    — fires when the vinyl disc slides out (shows panel)
+//   onCollapse     — fires when scene zooms back out (hides panel)
+//
+// DATA FLOW: VinylScene accumulates {trackId, trackNumber, trackName, durationMs} per album
+//   as playlist-track pages are fetched in the background. onAlbumExpand passes that in-memory
+//   array directly → NO secondary Spotify API call needed when expanding an album.
+//
+// PLAYBACK: TrackListPanel.handlePlay → POST /api/spotify/play
+// ─────────────────────────────────────────────────────────────────────────────
 
 "use client";
 
