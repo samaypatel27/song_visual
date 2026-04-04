@@ -157,9 +157,11 @@ interface ZoomState {
   lookAt: THREE.Vector3;
   originalCamPos: THREE.Vector3;
   originalLookAt: THREE.Vector3;
-  initialDist: number;    // distance to target at zoom start
-  progress: number;       // 0 → 1
-  loggedTrigger: boolean; // avoid spamming console
+  panSnapshot: THREE.Vector3;  // live-updated each idle frame — used for collapse target
+  initialCamZ: number;         // z distance at scene creation — used for collapse zoom-out
+  initialDist: number;         // distance to target at zoom start
+  progress: number;            // 0 → 1
+  loggedTrigger: boolean;      // avoid spamming console
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -216,32 +218,40 @@ function ZoomController({
       if (ctrl) ctrl.update();
 
     } else if (z.collapsing) {
-      // Collapse: lerp back to original
+      // Collapse: lerp back to where the user was panning, at full zoom-out distance
       camera.position.lerp(z.originalCamPos, 0.055);
       if (ctrl) ctrl.target.lerp(z.originalLookAt, 0.055);
 
       const remaining = camera.position.distanceTo(z.originalCamPos);
       if (remaining < 0.08) {
+        // Snap exactly so OrbitControls doesn't desync on next drag
+        camera.position.copy(z.originalCamPos);
+        if (ctrl) {
+          ctrl.target.copy(z.originalLookAt);
+          ctrl.update();
+        }
         z.collapsing = false;
         onZoomComplete();
+      } else {
+        if (ctrl) ctrl.update();
       }
 
-      if (ctrl) ctrl.update();
-
     } else {
-      // D-pad panning (when not zoomed)
+      // Idle: track current pan position so collapse can return here
+      if (ctrl) z.panSnapshot.copy(ctrl.target);
+
+      // D-pad panning
       if (!ctrl) return;
       const dir = pressedDirection.current;
-      const speed = 0.25;
-      if (dir === "up")    ctrl.target.y += speed;
-      if (dir === "down")  ctrl.target.y -= speed;
-      if (dir === "left")  ctrl.target.x -= speed;
-      if (dir === "right") ctrl.target.x += speed;
-      if (dir === "reset") ctrl.target.lerp(ORIGIN, 0.12);
-
-      ctrl.target.x = THREE.MathUtils.clamp(ctrl.target.x, -12, 12);
-      ctrl.target.y = THREE.MathUtils.clamp(ctrl.target.y, -8, 8);
-      if (dir) ctrl.update();
+      if (dir) {
+        const speed = 0.25;
+        if (dir === "up")    { ctrl.target.y += speed; ctrl.target.y = THREE.MathUtils.clamp(ctrl.target.y, -32, 32); }
+        if (dir === "down")  { ctrl.target.y -= speed; ctrl.target.y = THREE.MathUtils.clamp(ctrl.target.y, -32, 32); }
+        if (dir === "left")  { ctrl.target.x -= speed; ctrl.target.x = THREE.MathUtils.clamp(ctrl.target.x, -55, 55); }
+        if (dir === "right") { ctrl.target.x += speed; ctrl.target.x = THREE.MathUtils.clamp(ctrl.target.x, -55, 55); }
+        if (dir === "reset") ctrl.target.lerp(ORIGIN, 0.12);
+        ctrl.update();
+      }
     }
   });
 
@@ -356,6 +366,8 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
     lookAt: new THREE.Vector3(0, 0, 0),
     originalCamPos: new THREE.Vector3(0, 0, 22),
     originalLookAt: new THREE.Vector3(0, 0, 0),
+    panSnapshot: new THREE.Vector3(0, 0, 0),
+    initialCamZ: 22,
     initialDist: 0,
     progress: 0,
     loggedTrigger: false,
@@ -496,6 +508,9 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
     const z = zoomState.current;
     z.targetCamPos = targetCamPos;
     z.lookAt = lookAt;
+    // Use live-tracked pan position for collapse target, always zoom back out to initialCamZ
+    z.originalLookAt = new THREE.Vector3(z.panSnapshot.x, z.panSnapshot.y, 0);
+    z.originalCamPos = new THREE.Vector3(z.panSnapshot.x, z.panSnapshot.y, z.initialCamZ);
     z.initialDist = z.originalCamPos.distanceTo(targetCamPos);
     z.progress = 0;
     z.loggedTrigger = false;
@@ -560,6 +575,7 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
           // Expose camera so handleExpand can read its position at click time
           (window as any).__camera = camera;
           zoomState.current.originalCamPos = camera.position.clone();
+          zoomState.current.initialCamZ = camera.position.z;
         }}
       >
         {/* Lighting */}
@@ -640,15 +656,14 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
           {albumGroups.length > 0 && <AlbumsReadySignal onReady={handleAlbumsReady} />}
         </Suspense>
 
-        {/* Background click collapses */}
-        <mesh
-          position={[0, 0, -0.5]}
-          visible={!!expandedAlbumId}
-          onPointerDown={() => collapse()}
-        >
-          <planeGeometry args={[WALL_WIDTH, WALL_HEIGHT]} />
-          <meshBasicMaterial transparent opacity={0} />
-        </mesh>
+        {/* Background click collapses — only mounted when an album is expanded
+            so the invisible plane never intercepts pointer-down during free panning */}
+        {expandedAlbumId && (
+          <mesh position={[0, 0, -0.5]} onPointerDown={() => collapse()}>
+            <planeGeometry args={[WALL_WIDTH, WALL_HEIGHT]} />
+            <meshBasicMaterial transparent opacity={0} />
+          </mesh>
+        )}
 
         {/* WALL */}
         <mesh position={[0, 0, -3]}>
