@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, memo, Suspense } from "react";
+import { useEffect, useState, useRef, memo, useCallback, Suspense } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, useTexture } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -177,9 +177,11 @@ interface ZoomState {
   lookAt: THREE.Vector3;
   originalCamPos: THREE.Vector3;
   originalLookAt: THREE.Vector3;
-  initialDist: number;
-  progress: number;
-  loggedTrigger: boolean;
+  panSnapshot: THREE.Vector3;  // live-updated each idle frame — used for collapse target
+  initialCamZ: number;         // z distance at scene creation — used for collapse zoom-out
+  initialDist: number;         // distance to target at zoom start
+  progress: number;            // 0 → 1
+  loggedTrigger: boolean;      // avoid spamming console
 }
 
 function ZoomController({
@@ -215,13 +217,22 @@ function ZoomController({
       }
       if (ctrl) ctrl.update();
     } else if (z.collapsing) {
+      // Collapse: lerp back to where the user was panning, at full zoom-out distance
       camera.position.lerp(z.originalCamPos, 0.055);
       if (ctrl) ctrl.target.lerp(z.originalLookAt, 0.055);
 
       const remaining = camera.position.distanceTo(z.originalCamPos);
       if (remaining < 0.08) {
+        // Snap exactly so OrbitControls doesn't desync on next drag
+        camera.position.copy(z.originalCamPos);
+        if (ctrl) {
+          ctrl.target.copy(z.originalLookAt);
+          ctrl.update();
+        }
         z.collapsing = false;
         onZoomComplete();
+      } else {
+        if (ctrl) ctrl.update();
       }
       if (ctrl) ctrl.update();
     } else {
@@ -237,6 +248,23 @@ function ZoomController({
       ctrl.target.x = THREE.MathUtils.clamp(ctrl.target.x, -12, 12);
       ctrl.target.y = THREE.MathUtils.clamp(ctrl.target.y, -8, 8);
       if (dir) ctrl.update();
+
+    } else {
+      // Idle: track current pan position so collapse can return here
+      if (ctrl) z.panSnapshot.copy(ctrl.target);
+
+      // D-pad panning
+      if (!ctrl) return;
+      const dir = pressedDirection.current;
+      if (dir) {
+        const speed = 0.25;
+        if (dir === "up")    { ctrl.target.y += speed; ctrl.target.y = THREE.MathUtils.clamp(ctrl.target.y, -32, 32); }
+        if (dir === "down")  { ctrl.target.y -= speed; ctrl.target.y = THREE.MathUtils.clamp(ctrl.target.y, -32, 32); }
+        if (dir === "left")  { ctrl.target.x -= speed; ctrl.target.x = THREE.MathUtils.clamp(ctrl.target.x, -55, 55); }
+        if (dir === "right") { ctrl.target.x += speed; ctrl.target.x = THREE.MathUtils.clamp(ctrl.target.x, -55, 55); }
+        if (dir === "reset") ctrl.target.lerp(ORIGIN, 0.12);
+        ctrl.update();
+      }
     }
   });
 
@@ -298,12 +326,96 @@ function RecordPlayer() {
 }
 
 // VinylScene
+// Renders nothing, but its useEffect only fires once all sibling Suspense
+// children (album textures) have resolved — that's when we signal ready.
+function AlbumsReadySignal({ onReady }: { onReady: () => void }) {
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (!firedRef.current) {
+      firedRef.current = true;
+      onReady();
+    }
+  }, [onReady]);
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SKELETON LOADING PLACEHOLDERS
+// ─────────────────────────────────────────────────────────────────────────────
+// Generate skeleton positions using the same layout algorithm as real albums,
+// with representative track counts so sizes/spacing feel realistic.
+const SKELETON_GROUPS: AlbumGroup[] = [
+  3, 8, 5, 12, 2, 7, 4, 10, 3, 6, 8, 2, 5, 4, 7,
+].map((trackCount, i) => ({
+  albumId: `sk-${i}`, albumName: "", albumCoverUrl: "", trackCount,
+}));
+const SKELETON_LAYOUT = generatePositions(SKELETON_GROUPS, []);
+
+const SkeletonCover = memo(({ x, y, size, phaseOffset }: {
+  x: number; y: number; size: number; phaseOffset: number;
+}) => {
+  const matRef = useRef<THREE.MeshStandardMaterial>(null);
+
+  useFrame(({ clock }) => {
+    if (!matRef.current) return;
+    const t = Math.sin(clock.elapsedTime * 1.2 + phaseOffset) * 0.5 + 0.5;
+    const v = 0.18 + t * 0.09;
+    matRef.current.color.setRGB(v, v, v);
+  });
+
+  return (
+    <mesh position={[x, y, 0.15]}>
+      <boxGeometry args={[size, size, 0.12]} />
+      <meshStandardMaterial ref={matRef} roughness={0.9} metalness={0.05} transparent />
+    </mesh>
+  );
+});
+SkeletonCover.displayName = "SkeletonCover";
+
+// phase 'loading' — API loading or textures loading: continuous pulse 0.2 ↔ 1.0
+// phase 'exit'    — textures ready: fade out quickly to 0
+function SkeletonWall({ phase }: { phase: "loading" | "exit" }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const opRef = useRef(0);
+
+  useFrame(({ clock }) => {
+    if (phase === "exit") {
+      opRef.current = THREE.MathUtils.lerp(opRef.current, 0, 0.05);
+    } else {
+      // Pulse continuously between ~0.2 and 1.0
+      const pulse = 0.6 + 0.4 * Math.sin(clock.elapsedTime * 1.8);
+      opRef.current = THREE.MathUtils.lerp(opRef.current, pulse, 0.1);
+    }
+    if (!groupRef.current) return;
+    groupRef.current.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.isMesh) {
+        (mesh.material as THREE.MeshStandardMaterial).opacity = opRef.current;
+      }
+    });
+  });
+
+  return (
+    <group ref={groupRef}>
+      {SKELETON_LAYOUT.map((pos, i) => (
+        <SkeletonCover key={i} x={pos.x} y={pos.y} size={pos.size} phaseOffset={i * 0.8} />
+      ))}
+    </group>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCENE
+// ─────────────────────────────────────────────────────────────────────────────
 const MemoizedAlbumCover = memo(AlbumCover);
 
 export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDiscSlide, onCollapse }: VinylSceneProps) {
   const [albumGroups, setAlbumGroups] = useState<AlbumGroup[]>([]);
   const [positions, setPositions] = useState<any[]>([]);
-  const [isFetchingMore, setIsFetchingMore] = useState(false);
+
+  const [showSkeleton, setShowSkeleton] = useState(true);
+  const [albumsReady, setAlbumsReady] = useState(false);
+  const handleAlbumsReady = useCallback(() => setAlbumsReady(true), []);
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const [expandedAlbumId, setExpandedAlbumId] = useState<string | null>(null);
   const [discSlideActive, setDiscSlideActive] = useState(false);
@@ -315,6 +427,8 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
     lookAt: new THREE.Vector3(0, 0, 0),
     originalCamPos: new THREE.Vector3(0, 0, 22),
     originalLookAt: new THREE.Vector3(0, 0, 0),
+    panSnapshot: new THREE.Vector3(0, 0, 0),
+    initialCamZ: 22,
     initialDist: 0,
     progress: 0,
     loggedTrigger: false,
@@ -322,6 +436,8 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
 
   useEffect(() => {
     if (!playlistId) return;
+    setAlbumsReady(false);
+    setShowSkeleton(true);
     const controller = new AbortController();
     let isMounted = true;
 
@@ -371,16 +487,25 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
             // Append securely to trigger React reconciler
             setAlbumGroups(sortedAllGroups);
             setPositions(newPositions);
+          if (newGroups.length > 0) {
+            const newPositions = generatePositions(newGroups, cumulativePositions);
+            cumulativeGroups = [...cumulativeGroups, ...newGroups];
+            cumulativePositions = [...cumulativePositions, ...newPositions];
           }
 
           offset += limit;
+        }
+
+        // Set state once after all pages are fetched so albums appear all at once
+        if (isMounted && cumulativeGroups.length > 0) {
+          setAlbumGroups(cumulativeGroups);
+          setPositions(cumulativePositions);
         }
       } catch (err: any) {
         if (err.name !== 'AbortError') {
           console.error("[VinylScene] fetch error:", err);
         }
       } finally {
-        if (isMounted) setIsFetchingMore(false);
       }
     };
 
@@ -391,6 +516,15 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
     };
   }, [playlistId]);
 
+  // Unmount skeleton after its fade-out animation completes (~900ms)
+  useEffect(() => {
+    if (albumsReady) {
+      const t = setTimeout(() => setShowSkeleton(false), 900);
+      return () => clearTimeout(t);
+    }
+  }, [albumsReady]);
+
+  // ── Click handler — compute camera zoom target ─────────────────────────────
   const handleExpand = (
     albumId: string,
     albumName: string,
@@ -425,6 +559,9 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
     const z = zoomState.current;
     z.targetCamPos = targetCamPos;
     z.lookAt = lookAt;
+    // Use live-tracked pan position for collapse target, always zoom back out to initialCamZ
+    z.originalLookAt = new THREE.Vector3(z.panSnapshot.x, z.panSnapshot.y, 0);
+    z.originalCamPos = new THREE.Vector3(z.panSnapshot.x, z.panSnapshot.y, z.initialCamZ);
     z.initialDist = z.originalCamPos.distanceTo(targetCamPos);
     z.progress = 0;
     z.loggedTrigger = false;
@@ -447,6 +584,33 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
 
   return (
     <>
+      {!albumsReady && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 2,
+          display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          pointerEvents: "none",
+        }}>
+          <div style={{ display: "flex", gap: 10 }}>
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{
+                width: 10, height: 10, borderRadius: "50%", background: "#1DB954",
+                animation: `vinyl-dot-pulse 1.4s ease-in-out ${i * 0.2}s infinite`,
+              }} />
+            ))}
+          </div>
+          <p style={{
+            color: "rgba(255,255,255,0.35)", fontSize: 13, marginTop: 16,
+            fontFamily: "Inter, system-ui, sans-serif", letterSpacing: "0.08em",
+          }}>Loading albums</p>
+          <style>{`
+            @keyframes vinyl-dot-pulse {
+              0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
+              40% { transform: scale(1); opacity: 1; }
+            }
+          `}</style>
+        </div>
+      )}
       <Canvas
         style={{
           position: "fixed",
@@ -461,6 +625,7 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
         onCreated={({ camera }) => {
           (window as any).__camera = camera;
           zoomState.current.originalCamPos = camera.position.clone();
+          zoomState.current.initialCamZ = camera.position.z;
         }}
       >
         {/* Lighting */}
@@ -554,6 +719,46 @@ export function VinylScene({ playlistId, pressedDirection, onAlbumExpand, onDisc
           <planeGeometry args={[WALL_WIDTH, WALL_HEIGHT]} />
           <meshBasicMaterial transparent opacity={0} />
         </mesh>
+        {/* Skeleton placeholders — fade out once album textures have all loaded */}
+        {showSkeleton && (
+          <SkeletonWall phase={albumsReady ? "exit" : "loading"} />
+        )}
+
+        {/* Album cards — wrapped in Suspense so useTexture suspensions are caught.
+            AlbumsReadySignal only mounts (and fires) once every texture has resolved. */}
+        <Suspense fallback={null}>
+          {albumGroups.map((group, i) => {
+            const { x, y, scale } = positions[i] || { x: 0, y: 0, scale: 1 };
+            const isExpanded = expandedAlbumId === group.albumId;
+            const isBlurred = expandedAlbumId !== null && !isExpanded;
+            return (
+              <group key={group.albumId} position={[x, y, 0.1]}>
+                <MemoizedAlbumCover
+                  albumCoverUrl={group.albumCoverUrl}
+                  position={[0, 0, 0]}
+                  trackCount={group.trackCount}
+                  index={i}
+                  scale={scale}
+                  isExpanded={isExpanded}
+                  discSlideActive={isExpanded && discSlideActive}
+                  isBlurred={isBlurred}
+                  albumName={group.albumName}
+                  onExpand={() => handleExpand(group.albumId, group.albumName, group.albumCoverUrl, x, y, group.trackCount)}
+                />
+              </group>
+            );
+          })}
+          {albumGroups.length > 0 && <AlbumsReadySignal onReady={handleAlbumsReady} />}
+        </Suspense>
+
+        {/* Background click collapses — only mounted when an album is expanded
+            so the invisible plane never intercepts pointer-down during free panning */}
+        {expandedAlbumId && (
+          <mesh position={[0, 0, -0.5]} onPointerDown={() => collapse()}>
+            <planeGeometry args={[WALL_WIDTH, WALL_HEIGHT]} />
+            <meshBasicMaterial transparent opacity={0} />
+          </mesh>
+        )}
 
         {/* Collapse on Escape key */}
         {expandedAlbumId && (
