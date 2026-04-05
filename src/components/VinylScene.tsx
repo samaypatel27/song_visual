@@ -113,23 +113,23 @@ const generatePositions = (groups: AlbumGroup[], roomType: 'study' | 'bedroom' =
     const W = 100;
     const H = 35;
     const centerY = 12.5;
-    
+
     // Choose columns and rows that best match the aspect ratio roughly W/H (2.85)
     // to maximize coverage.
     const aspect = W / H;
     const cols = Math.max(1, Math.floor(Math.sqrt(n * aspect)));
     const rows = Math.ceil(n / cols);
-    
-    const paddingMultiplier = 0.15; // 15% padding
+
+    const paddingMultiplier = 0; // 0% padding (no gap)
     const sizeX = W / (cols + (cols - 1) * paddingMultiplier);
     const sizeY = H / (rows + (rows - 1) * paddingMultiplier);
     const uniformSize = Math.min(sizeX, sizeY, 18); // limit maximum album size
-    
+
     const stepX = uniformSize * (1 + paddingMultiplier);
     const stepY = uniformSize * (1 + paddingMultiplier);
     const totalGridWidth = cols * uniformSize + (cols - 1) * uniformSize * paddingMultiplier;
     const totalGridHeight = rows * uniformSize + (rows - 1) * uniformSize * paddingMultiplier;
-    
+
     // Calculate top-left start positions
     const startX = -totalGridWidth / 2 + uniformSize / 2;
     const startY = centerY + totalGridHeight / 2 - uniformSize / 2;
@@ -139,12 +139,12 @@ const generatePositions = (groups: AlbumGroup[], roomType: 'study' | 'bedroom' =
       const row = Math.floor(i / cols);
       const x = startX + col * stepX;
       const y = startY - row * stepY;
-      
+
       const group = groups[i];
       // Size equals base card size * scale. We want total rendered size to be uniformSize.
       const baseSize = getCardSize(group.trackCount);
       const scale = uniformSize / baseSize;
-      
+
       // Shuffle slightly if we want, or exact grid. Here exact grid.
       positions.push({ x, y, angle: 0, scale, size: uniformSize });
     }
@@ -152,10 +152,14 @@ const generatePositions = (groups: AlbumGroup[], roomType: 'study' | 'bedroom' =
   }
 
   // --- "study" roomType (spiral / collision layout) ---
-  const wallClamp = (x: number, y: number) => [
-    Math.max(-WALL_WIDTH / 2 + 2, Math.min(WALL_WIDTH / 2 - 2, x)),
-    Math.max(-WALL_HEIGHT / 2 + 2, Math.min(WALL_HEIGHT / 2 - 2, y)),
-  ];
+  const wallClamp = (x: number, y: number) => {
+    // Prevent records from generating lower than Y = -10 so they don't clip into the desk/table scene.
+    // Setting minY restricts them safely above the area where the record player plane lives (Y=-23 to Y=-13.5)
+    return [
+      Math.max(-WALL_WIDTH / 2 + 2, Math.min(WALL_WIDTH / 2 - 2, x)),
+      Math.max(-10, Math.min(WALL_HEIGHT / 2 - 2, y)),
+    ];
+  };
 
   for (let i = 0; i < n; i++) {
     const group = groups[i];
@@ -195,7 +199,7 @@ const generatePositions = (groups: AlbumGroup[], roomType: 'study' | 'bedroom' =
         v /= max;
 
         const x = r * WALL_ASPECT * u;
-        const y = r * v;
+        const y = 8 + r * v; // Shift spiral generation origin up to balance with clamped bottom bounds
         const [clampedX, clampedY] = wallClamp(x, y);
 
         let tempCollision = false;
@@ -656,7 +660,7 @@ export function VinylScene({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedAlbumId]);
 
   // ── Click handler — compute camera zoom target ────────────────────────────
@@ -828,7 +832,7 @@ export function VinylScene({
             setDiscSlideActive(true);
             onDiscSlide?.();
           }}
-          onZoomComplete={() => {}}
+          onZoomComplete={() => { }}
         />
         <OriginCapture zoomState={zoomState} controlsRef={controlsRef} />
 
