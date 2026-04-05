@@ -6,13 +6,13 @@ export default function MostPlayedPage() {
     useEffect(() => {
         const fetchMostPlayed = async () => {
             const timeRanges = ["short_term", "medium_term", "long_term"];
-            
+
             for (const range of timeRanges) {
                 try {
                     const res = await fetch(`/api/spotify/most-played?time_range=${range}`);
                     if (!res.ok) throw new Error("Failed to fetch");
                     const data = await res.json();
-                    
+
                     console.log(`\n=== Most Played Songs (${range}) ===`);
                     data.tracks.forEach((track: any, index: number) => {
                         const minutes = Math.floor(track.durationMs / 60000);
