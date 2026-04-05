@@ -77,6 +77,7 @@ export interface AlbumGroup {
 
 export interface VinylSceneProps {
   playlistId: string;
+  roomType?: "study" | "bedroom";
   pressedDirection: React.MutableRefObject<
     "up" | "down" | "left" | "right" | "reset" | null
   >;
@@ -102,14 +103,61 @@ const getCardSize = (trackCount: number) =>
 
 const WALL_ASPECT = WALL_WIDTH / WALL_HEIGHT;
 
-const generatePositions = (groups: AlbumGroup[]) => {
+const generatePositions = (groups: AlbumGroup[], roomType: 'study' | 'bedroom' = 'study') => {
   const positions: { x: number; y: number; angle: number; scale: number; size: number }[] = [];
+  const n = groups.length;
+  if (n === 0) return positions;
+
+  if (roomType === "bedroom") {
+    // Playable area defined to avoid the bed: W=100, H=35, CenterY=12.5
+    const W = 100;
+    const H = 35;
+    const centerY = 12.5;
+    
+    // Choose columns and rows that best match the aspect ratio roughly W/H (2.85)
+    // to maximize coverage.
+    const aspect = W / H;
+    const cols = Math.max(1, Math.floor(Math.sqrt(n * aspect)));
+    const rows = Math.ceil(n / cols);
+    
+    const paddingMultiplier = 0.15; // 15% padding
+    const sizeX = W / (cols + (cols - 1) * paddingMultiplier);
+    const sizeY = H / (rows + (rows - 1) * paddingMultiplier);
+    const uniformSize = Math.min(sizeX, sizeY, 18); // limit maximum album size
+    
+    const stepX = uniformSize * (1 + paddingMultiplier);
+    const stepY = uniformSize * (1 + paddingMultiplier);
+    const totalGridWidth = cols * uniformSize + (cols - 1) * uniformSize * paddingMultiplier;
+    const totalGridHeight = rows * uniformSize + (rows - 1) * uniformSize * paddingMultiplier;
+    
+    // Calculate top-left start positions
+    const startX = -totalGridWidth / 2 + uniformSize / 2;
+    const startY = centerY + totalGridHeight / 2 - uniformSize / 2;
+
+    for (let i = 0; i < n; i++) {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = startX + col * stepX;
+      const y = startY - row * stepY;
+      
+      const group = groups[i];
+      // Size equals base card size * scale. We want total rendered size to be uniformSize.
+      const baseSize = getCardSize(group.trackCount);
+      const scale = uniformSize / baseSize;
+      
+      // Shuffle slightly if we want, or exact grid. Here exact grid.
+      positions.push({ x, y, angle: 0, scale, size: uniformSize });
+    }
+    return positions;
+  }
+
+  // --- "study" roomType (spiral / collision layout) ---
   const wallClamp = (x: number, y: number) => [
     Math.max(-WALL_WIDTH / 2 + 2, Math.min(WALL_WIDTH / 2 - 2, x)),
     Math.max(-WALL_HEIGHT / 2 + 2, Math.min(WALL_HEIGHT / 2 - 2, y)),
   ];
 
-  for (let i = 0; i < groups.length; i++) {
+  for (let i = 0; i < n; i++) {
     const group = groups[i];
     // Deterministic random properties based on albumId
     let h = 0;
@@ -317,8 +365,9 @@ function OriginCapture({
 // WALL BACKGROUND + RECORD PLAYER
 // ─────────────────────────────────────────────────────────────────────────────
 
-function WallBackground() {
-  const tex = useTexture("/Wall_Background.png");
+function WallBackground({ roomType = "study" }: { roomType?: "study" | "bedroom" }) {
+  const texPath = roomType === "bedroom" ? "/bedroom.png" : "/Wall_Background.png";
+  const tex = useTexture(texPath);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;
@@ -372,7 +421,7 @@ function AlbumsReadySignal({ onReady }: { onReady: () => void }) {
 // Repeated cyclically when count exceeds the pattern length.
 const SKELETON_TRACK_PATTERN = [5, 10, 3, 8, 2, 7, 4, 12, 6, 3, 9, 2, 5, 8, 4];
 
-function buildSkeletonLayout(count: number) {
+function buildSkeletonLayout(count: number, roomType: "study" | "bedroom" = "study") {
   const groups: AlbumGroup[] = Array.from({ length: count }, (_, i) => ({
     albumId: `sk-${i}`,
     albumName: "",
@@ -380,11 +429,11 @@ function buildSkeletonLayout(count: number) {
     trackCount: SKELETON_TRACK_PATTERN[i % SKELETON_TRACK_PATTERN.length],
     tracks: [],
   }));
-  return generatePositions(groups);
+  return generatePositions(groups, roomType);
 }
 
-// Default layout used before the first API response arrives
-const DEFAULT_SKELETON_LAYOUT = buildSkeletonLayout(15);
+// Default layout used before the first API response arrives (for SSR placeholder)
+const DEFAULT_SKELETON_LAYOUT = buildSkeletonLayout(15, "study");
 
 const SkeletonCover = memo(
   ({
@@ -465,6 +514,7 @@ const MemoizedAlbumCover = memo(AlbumCover);
 
 export function VinylScene({
   playlistId,
+  roomType = "study",
   pressedDirection,
   onAlbumExpand,
   onDiscSlide,
@@ -474,11 +524,20 @@ export function VinylScene({
   const [positions, setPositions] = useState<{ x: number; y: number; scale: number }[]>([]);
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [albumsReady, setAlbumsReady] = useState(false);
-  const [skeletonLayout, setSkeletonLayout] = useState(DEFAULT_SKELETON_LAYOUT);
+  const [skeletonLayout, setSkeletonLayout] = useState(() => buildSkeletonLayout(15, roomType));
   const handleAlbumsReady = useCallback(() => setAlbumsReady(true), []);
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const [expandedAlbumId, setExpandedAlbumId] = useState<string | null>(null);
   const [discSlideActive, setDiscSlideActive] = useState(false);
+
+  // Synchronize layout recalculation whenever roomType changes (also runs implicitly when data loads due to albumGroups changing)
+  useEffect(() => {
+    if (albumGroups.length > 0) {
+      setPositions(generatePositions(albumGroups, roomType));
+    }
+    // ensure skeleton updates its layout as well behind the scenes
+    setSkeletonLayout(buildSkeletonLayout(albumGroups.length || 15, roomType));
+  }, [roomType, albumGroups]);
 
   const zoomState = useRef<ZoomState>({
     active: false,
@@ -554,7 +613,7 @@ export function VinylScene({
                 pageAlbumCount,
                 Math.round(pageAlbumCount * (total / pageTrackCount))
               );
-              setSkeletonLayout(buildSkeletonLayout(estimated));
+              setSkeletonLayout(buildSkeletonLayout(estimated, roomType));
             }
           }
 
@@ -566,7 +625,7 @@ export function VinylScene({
             (a, b) => b.trackCount - a.trackCount
           );
           setAlbumGroups(sortedGroups);
-          setPositions(generatePositions(sortedGroups));
+          // the setPositions state is now fully reacting to albumGroups through a dedicated useEffect
         }
       } catch (err: any) {
         if (err.name !== "AbortError")
@@ -839,8 +898,8 @@ export function VinylScene({
             </mesh>
           }
         >
-          <WallBackground />
-          <RecordPlayer />
+          <WallBackground roomType={roomType} />
+          {roomType === "study" && <RecordPlayer />}
         </Suspense>
       </Canvas>
 

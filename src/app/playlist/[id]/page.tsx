@@ -59,6 +59,7 @@ export default function PlaylistDetailPage({ params }: PageProps) {
     const [panelAlbumCoverUrl, setPanelAlbumCoverUrl] = useState("");
     const [panelTracks, setPanelTracks] = useState<Track[]>([]);
     const [panelDataReady, setPanelDataReady] = useState(false);
+    const [roomType, setRoomType] = useState<"study" | "bedroom">("study");
 
     const handleAlbumExpand = useCallback((
         albumId: string,
@@ -162,8 +163,56 @@ export default function PlaylistDetailPage({ params }: PageProps) {
                 Playlists
             </button>}
 
+            {/* Room Toggle — hidden when an album is expanded */}
+            {!albumExpanded && <button
+                onClick={() => setRoomType(prev => prev === "study" ? "bedroom" : "study")}
+                style={{
+                    position: "fixed",
+                    top: "28px",
+                    left: "170px",
+                    zIndex: 9999,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "10px 18px 10px 14px",
+                    background: "rgba(18, 14, 10, 0.55)",
+                    backdropFilter: "blur(16px)",
+                    WebkitBackdropFilter: "blur(16px)",
+                    border: "1px solid rgba(200, 160, 80, 0.18)",
+                    borderRadius: "12px",
+                    cursor: "pointer",
+                    color: "rgba(232, 213, 176, 0.7)",
+                    fontFamily: "'Inter', system-ui, sans-serif",
+                    fontSize: "0.78em",
+                    fontWeight: 500,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    transition: "background 200ms ease, border-color 200ms ease, color 200ms ease",
+                    boxShadow: "0 4px 24px rgba(0,0,0,0.4), inset 0 0.5px 0 rgba(200,160,80,0.08)",
+                }}
+                onMouseEnter={e => {
+                    const el = e.currentTarget;
+                    el.style.background = "rgba(30, 22, 12, 0.75)";
+                    el.style.borderColor = "rgba(200, 160, 80, 0.45)";
+                    el.style.color = "rgba(232, 213, 176, 1)";
+                }}
+                onMouseLeave={e => {
+                    const el = e.currentTarget;
+                    el.style.background = "rgba(18, 14, 10, 0.55)";
+                    el.style.borderColor = "rgba(200, 160, 80, 0.18)";
+                    el.style.color = "rgba(232, 213, 176, 0.7)";
+                }}
+            >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    <polyline points="9 22 9 12 15 12 15 22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                {roomType === "study" ? "Bedroom" : "Study Room"}
+            </button>}
+
             <VinylScene
                 playlistId={id}
+                roomType={roomType}
                 pressedDirection={pressedDirection}
                 onAlbumExpand={handleAlbumExpand}
                 onDiscSlide={handleDiscSlide}
