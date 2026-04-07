@@ -29,6 +29,7 @@ export async function GET(request: Request) {
     const data = await res.json();
 
     const tracks = (data.items ?? []).map((track: any) => ({
+        trackId: track.id ?? "",
         songName: track.name,
         albumName: track.album?.name ?? "",
         albumCoverUrl: track.album?.images?.[0]?.url ?? "",
