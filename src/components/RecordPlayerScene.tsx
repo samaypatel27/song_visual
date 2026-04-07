@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, RoundedBox } from "@react-three/drei";
 import * as THREE from "three";
@@ -12,12 +12,12 @@ const KNURL_YS = Array.from({ length: KNURL_COUNT }, (_, i) =>
     -0.12 + (i / (KNURL_COUNT - 1)) * 0.24
 );
 
-// ── Tonearm curve (module-level, immutable) ────────────────────────────────
+// ── Tonearm curve — coordinates RELATIVE to pivot at world [3.3, 0, -1.8] ─
 const ARM_CURVE = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(3.3, 0.65, -1.8),
-    new THREE.Vector3(3.1, 0.65, -1.0),
-    new THREE.Vector3(2.8, 0.65, -0.2),
-    new THREE.Vector3(2.3, 0.65, 0.5),
+    new THREE.Vector3( 0.0, 0.65,  0.0),
+    new THREE.Vector3(-0.2, 0.65,  0.8),
+    new THREE.Vector3(-0.5, 0.65,  1.6),
+    new THREE.Vector3(-1.0, 0.65,  2.3),
 ]);
 const ARM_GEO = new THREE.TubeGeometry(ARM_CURVE, 40, 0.04, 8, false);
 
@@ -98,37 +98,38 @@ function ControlKnob() {
     );
 }
 
-// ── Sub-component: tonearm assembly ───────────────────────────────────────
-function TonearmAssembly() {
+// ── Sub-component: tonearm assembly (pivot-relative coords) ───────────────
+function TonearmAssembly({ groupRef }: { groupRef: React.RefObject<THREE.Group | null> }) {
     return (
-        <group>
-            {/* Pivot base */}
-            <mesh position={[3.3, 0.35, -1.8]} castShadow>
+        // Pivot group at world [3.3, 0, -1.8]; initial rotation is rest angle (0.45 rad)
+        <group ref={groupRef} position={[3.3, 0, -1.8]} rotation={[0, 0.45, 0]}>
+            {/* Pivot base — relative to pivot */}
+            <mesh position={[0, 0.35, 0]} castShadow>
                 <cylinderGeometry args={[0.22, 0.28, 0.5, 32]} />
                 <meshStandardMaterial color="#c0c0c0" metalness={0.9} roughness={0.1} />
             </mesh>
-            {/* Pivot top cap (smaller, chrome) */}
-            <mesh position={[3.3, 0.62, -1.8]}>
+            {/* Pivot top cap */}
+            <mesh position={[0, 0.62, 0]}>
                 <cylinderGeometry args={[0.12, 0.12, 0.06, 16]} />
                 <meshStandardMaterial color="#e0e0e0" metalness={0.95} roughness={0.05} />
             </mesh>
-            {/* Arm tube */}
+            {/* Arm tube — ARM_GEO uses pivot-relative coords */}
             <mesh castShadow>
                 <primitive object={ARM_GEO} />
                 <meshStandardMaterial color="#d4d4d4" metalness={0.95} roughness={0.05} />
             </mesh>
-            {/* Counterweight (behind pivot) */}
-            <mesh position={[3.5, 0.65, -2.5]}>
+            {/* Counterweight — relative to pivot */}
+            <mesh position={[0.2, 0.65, -0.7]}>
                 <cylinderGeometry args={[0.13, 0.13, 0.4, 16]} />
                 <meshStandardMaterial color="#888888" metalness={0.8} roughness={0.2} />
             </mesh>
-            {/* Headshell */}
-            <mesh position={[2.1, 0.62, 0.58]} rotation={[0, Math.PI * 0.08, 0]} castShadow>
+            {/* Headshell — relative to pivot */}
+            <mesh position={[-1.2, 0.62, 2.38]} rotation={[0, Math.PI * 0.08, 0]} castShadow>
                 <boxGeometry args={[0.32, 0.1, 0.18]} />
                 <meshStandardMaterial color="#2a2a2a" roughness={0.4} metalness={0.3} />
             </mesh>
-            {/* Stylus cantilever */}
-            <mesh position={[2.0, 0.57, 0.62]}>
+            {/* Stylus cantilever — relative to pivot */}
+            <mesh position={[-1.3, 0.57, 2.42]}>
                 <cylinderGeometry args={[0.012, 0.008, 0.1, 8]} />
                 <meshStandardMaterial color="#1a1a1a" roughness={0.3} />
             </mesh>
@@ -152,8 +153,98 @@ function IndicatorLight() {
     );
 }
 
+// ── Inner scene props ─────────────────────────────────────────────────────
+interface RecordPlayerSceneInnerProps {
+    albumCoverUrl: string;
+    onPhase3?: () => void;
+}
+
 // ── Inner scene (needs to be inside Canvas) ───────────────────────────────
-function RecordPlayerSceneInner({ albumCoverUrl }: { albumCoverUrl: string }) {
+function RecordPlayerSceneInner({ albumCoverUrl, onPhase3 }: RecordPlayerSceneInnerProps) {
+
+    // ── Animation refs ────────────────────────────────────────────────────
+    const dustCoverPivotRef  = useRef<THREE.Group>(null);
+    const tonearmGroupRef    = useRef<THREE.Group>(null);
+    const platterGroupRef    = useRef<THREE.Group>(null);
+    const vinylSpinEnabledRef = useRef<boolean>(true);
+    const animRef = useRef({
+        active: false,
+        phase: 0,
+        elapsed: 0,
+        platSpinSpeed: 0,
+    });
+
+    // ── Trigger animation whenever a new track is selected ────────────────
+    useEffect(() => {
+        if (!albumCoverUrl) return;
+
+        // Reset all animated objects to Phase 0 state
+        if (tonearmGroupRef.current) {
+            tonearmGroupRef.current.rotation.y = 0.45; // back to rest angle
+            tonearmGroupRef.current.position.y = 0;
+        }
+        if (dustCoverPivotRef.current) {
+            dustCoverPivotRef.current.rotation.x = 0;
+        }
+        if (platterGroupRef.current) {
+            platterGroupRef.current.rotation.y = 0;
+        }
+        vinylSpinEnabledRef.current = true;
+        animRef.current = { active: true, phase: 1, elapsed: 0, platSpinSpeed: 0 };
+    }, [albumCoverUrl]);
+
+    // ── Animation driver ──────────────────────────────────────────────────
+    useFrame(({}, delta) => {
+        const anim = animRef.current;
+        if (!anim.active) return;
+
+        // Cap delta to prevent jumps after tab switch / long frame
+        const dt = Math.min(delta, 0.1);
+        anim.elapsed += dt;
+
+        if (anim.phase === 1) {
+            // Phase 1: dust cover opens (1.5 s, easeOut cubic)
+            const p  = Math.min(anim.elapsed / 1.5, 1);
+            const ep = 1 - Math.pow(1 - p, 3);
+            if (dustCoverPivotRef.current) {
+                dustCoverPivotRef.current.rotation.x = ep * -1.15;
+            }
+            if (p >= 1) { anim.phase = 2; anim.elapsed = 0; }
+
+        } else if (anim.phase === 2) {
+            const e = anim.elapsed;
+            if (tonearmGroupRef.current) {
+                if (e < 0.5) {
+                    // Step A: lift tonearm (linear, 0–0.5 s)
+                    tonearmGroupRef.current.position.y = (e / 0.5) * 0.15;
+                } else if (e < 1.5) {
+                    // Step B: swing from rest (0.45 rad) to play (0 rad), easeInOut quad
+                    const p  = (e - 0.5) / 1.0;
+                    const ep = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+                    tonearmGroupRef.current.rotation.y = 0.45 * (1 - ep);
+                } else if (e < 2.0) {
+                    // Step C: lower onto record, easeIn quad (1.5–2.0 s)
+                    const p = (e - 1.5) / 0.5;
+                    tonearmGroupRef.current.position.y = 0.15 * (1 - p * p);
+                }
+            }
+            if (e >= 2.0) {
+                anim.phase = 3;
+                anim.elapsed = 0;
+                vinylSpinEnabledRef.current = false; // platterGroupRef takes over
+                onPhase3?.();
+            }
+
+        } else if (anim.phase === 3) {
+            // Phase 3: platter spins up to 33.33 RPM (≈ 3.49 rad/s)
+            const TARGET = (33.33 / 60) * 2 * Math.PI;
+            anim.platSpinSpeed = THREE.MathUtils.lerp(anim.platSpinSpeed, TARGET, 0.03);
+            if (platterGroupRef.current) {
+                platterGroupRef.current.rotation.y += anim.platSpinSpeed * dt;
+            }
+        }
+    });
+
     return (
         <>
             {/* Lighting */}
@@ -170,24 +261,58 @@ function RecordPlayerSceneInner({ albumCoverUrl }: { albumCoverUrl: string }) {
             {/* Glow for indicator light */}
             <pointLight position={[3.2, 0.5, 0.65]} intensity={0.3} color="#00ff44" distance={1.5} />
 
-            {/* Plinth */}
-            <RoundedBox args={[8, 0.6, 7]} radius={0.25} position={[0, 0, 0]} receiveShadow>
-                <meshStandardMaterial color="#bdb8b0" roughness={0.45} metalness={0.02} />
-            </RoundedBox>
-
-            {/* Platter */}
-            <mesh position={[-0.4, 0.39, 0]} receiveShadow>
-                <cylinderGeometry args={[3.1, 3.1, 0.18, 64]} />
-                <meshStandardMaterial color="#a8a8a8" metalness={0.85} roughness={0.18} />
+            {/* Shadow receiver plane */}
+            <mesh position={[0, -0.01, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+                <planeGeometry args={[20, 20]} />
+                <meshStandardMaterial color="#000000" transparent opacity={0.15} roughness={1} metalness={0} />
             </mesh>
 
-            {/* Vinyl disc — VinylRecord laid flat; local Z-spin → world Y-spin (turntable) */}
-            <group position={[-0.4, 0.5, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-                <VinylRecord albumCoverUrl={albumCoverUrl} position={[0, 0, 0]} radius={2.85} />
+            {/* Plinth — matte off-white ceramic */}
+            <RoundedBox args={[8, 0.6, 7]} radius={0.25} position={[0, 0, 0]} receiveShadow castShadow>
+                <meshStandardMaterial color="#f0ede8" roughness={0.92} metalness={0.0} />
+            </RoundedBox>
+
+            {/* Platter + Vinyl — share one group for Phase 3 rotation */}
+            <group ref={platterGroupRef} position={[-0.4, 0, 0]}>
+                {/* Platter disc — brushed aluminum */}
+                <mesh position={[0, 0.39, 0]} receiveShadow>
+                    <cylinderGeometry args={[3.1, 3.1, 0.18, 64]} />
+                    <meshStandardMaterial color="#b8b8b8" metalness={0.85} roughness={0.25} />
+                </mesh>
+                {/* Vinyl disc — rotated flat; VinylRecord spins on Z (= world Y when platter is flat) */}
+                <group position={[0, 0.5, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                    <VinylRecord
+                        albumCoverUrl={albumCoverUrl}
+                        position={[0, 0, 0]}
+                        radius={2.85}
+                        spinEnabledRef={vinylSpinEnabledRef}
+                    />
+                </group>
             </group>
 
             {/* Tonearm */}
-            <TonearmAssembly />
+            <TonearmAssembly groupRef={tonearmGroupRef} />
+
+            {/* Tonearm rest peg — stationary chrome pillar on plinth */}
+            <mesh position={[1.1, 0.5, 0.95]}>
+                <cylinderGeometry args={[0.04, 0.04, 0.18, 12]} />
+                <meshStandardMaterial color="#e0e0e0" metalness={0.95} roughness={0.05} />
+            </mesh>
+
+            {/* Dust cover — pivot at rear-bottom edge of plinth */}
+            <group ref={dustCoverPivotRef} position={[0, 0.3, -3.6]}>
+                {/* Cover mesh positioned relative to pivot so it swings open backward on X */}
+                <mesh position={[0, 1.4, 3.6]} castShadow>
+                    <boxGeometry args={[8.4, 2.8, 7.2]} />
+                    <meshPhysicalMaterial
+                        color="#1a1a2a"
+                        transmission={0.75}
+                        roughness={0.05}
+                        thickness={0.8}
+                        opacity={1.0}
+                    />
+                </mesh>
+            </group>
 
             {/* VU meter */}
             <VUMeter />
@@ -216,9 +341,10 @@ export interface RecordPlayerSceneProps {
     albumCoverUrl: string;
     songName: string;
     artistName: string;
+    onPhase3?: () => void;
 }
 
-export function RecordPlayerScene({ albumCoverUrl, songName, artistName }: RecordPlayerSceneProps) {
+export function RecordPlayerScene({ albumCoverUrl, songName, artistName, onPhase3 }: RecordPlayerSceneProps) {
     return (
         <div style={{
             width: "100%",
@@ -232,7 +358,7 @@ export function RecordPlayerScene({ albumCoverUrl, songName, artistName }: Recor
                 style={{ width: "100%", height: "100%" }}
                 gl={{ antialias: true, alpha: true }}
             >
-                <RecordPlayerSceneInner albumCoverUrl={albumCoverUrl} />
+                <RecordPlayerSceneInner albumCoverUrl={albumCoverUrl} onPhase3={onPhase3} />
             </Canvas>
             {/* Track info overlay */}
             <div style={{

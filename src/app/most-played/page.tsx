@@ -59,6 +59,7 @@ export default function MostPlayedPage() {
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [playingId, setPlayingId] = useState<string | null>(null);
     const toastIdRef = useRef(0);
+    const pendingTrackRef = useRef<Track | null>(null);
 
     const addToast = (type: ToastType, message: string, duration = 4000) => {
         const id = ++toastIdRef.current;
@@ -337,7 +338,7 @@ export default function MostPlayedPage() {
                                             <div
                                                 key={i}
                                                 className="mp-row"
-                                                onClick={() => { setSelectedTrack(track); handlePlay(track); }}
+                                                onClick={() => { setSelectedTrack(track); pendingTrackRef.current = track; }}
                                                 onMouseEnter={() => setHoveredRow(i)}
                                                 onMouseLeave={() => setHoveredRow(null)}
                                                 style={{
@@ -539,6 +540,9 @@ export default function MostPlayedPage() {
                         albumCoverUrl={selectedTrack.albumCoverUrl}
                         songName={selectedTrack.songName}
                         artistName={selectedTrack.artistName}
+                        onPhase3={() => {
+                            if (pendingTrackRef.current) handlePlay(pendingTrackRef.current);
+                        }}
                     />
                 </div>
             )}
