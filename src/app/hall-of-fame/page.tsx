@@ -1,28 +1,17 @@
 // Hall of Fame — /hall-of-fame
 //
-// Layout (two scroll sections):
-//   Section 1 (sticky, 200vh scroll space):
-//     CircularGallery — top albums carousel (scroll to rotate)
-//   Section 2 (100vh):
-//     HallOfFameScene — 3D artist plaques + vinyl crates
-//
-// Fixed overlays (position:fixed, always on top):
-//   z=20 — D-pad navigation (bottom-right)
-//   z=50 — Back button pill (bottom-left)
+// Layout: sticky CircularGallery (200vh scroll space → 100vh sticky viewport)
+// Fixed overlays: back button (bottom-left)
 
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { HallOfFameScene } from "@/components/HallOfFameScene";
-import { DPadControls } from "@/components/DPadControls";
 import { CircularGallery, type GalleryItem } from "@/components/ui/circular-gallery";
-
-type Direction = "up" | "down" | "left" | "right" | "reset";
+import { ArtistLeaderboard } from "@/components/ArtistLeaderboard";
 
 export default function HallOfFamePage() {
   const router = useRouter();
-  const pressedDirection = useRef<Direction | null>(null);
   const [albums, setAlbums] = useState<GalleryItem[]>([]);
   const [galleryLoading, setGalleryLoading] = useState(true);
 
@@ -40,11 +29,10 @@ export default function HallOfFamePage() {
   return (
     <div style={{ position: "relative" }}>
 
-      {/* ── Section 1: Circular Album Gallery ─────────────────────────────────
-          200vh of scrollable space with a sticky 100vh viewport.
-          Scrolling this section rotates the carousel.
+      {/* ── Circular Album Gallery ─────────────────────────────────────────────
+          200vh of scrollable space; inner div sticks to viewport while scrolling.
       ───────────────────────────────────────────────────────────────────── */}
-      <section style={{ height: "200vh" }}>
+      <section style={{ height: "750vh" }}>
         <div
           style={{
             position: "sticky",
@@ -54,7 +42,7 @@ export default function HallOfFamePage() {
             background: "#0a0a0f",
           }}
         >
-          {/* Title overlay */}
+          {/* Title */}
           <div
             style={{
               position: "absolute",
@@ -90,17 +78,18 @@ export default function HallOfFamePage() {
             </p>
           </div>
 
-          {/* Circular Gallery */}
+          {/* Gallery */}
           {!galleryLoading && albums.length > 0 && (
             <CircularGallery
               items={albums}
-              radius={500}
-              autoRotateSpeed={0.015}
+              radius={650}
+              tilt={-12}
+              autoRotateSpeed={0.15}
               style={{ position: "absolute", inset: 0 }}
             />
           )}
 
-          {/* Scroll hint arrow at bottom */}
+          {/* Scroll hint */}
           <div
             style={{
               position: "absolute",
@@ -128,20 +117,12 @@ export default function HallOfFamePage() {
         </div>
       </section>
 
-      {/* ── Section 2: 3D Hall of Fame Scene ──────────────────────────────────
-          Artist plaques + vinyl crates in a Three.js canvas.
-          HallOfFameScene now uses position:absolute within its own wrapper.
-      ───────────────────────────────────────────────────────────────────── */}
-      <section style={{ position: "relative", height: "100vh" }}>
-        <HallOfFameScene pressedDirection={pressedDirection} />
+      {/* ── Section 2: Artist Leaderboard ───────────────────────────────────── */}
+      <section style={{ position: "relative", height: "100vh", background: "#0a0a0f" }}>
+        <ArtistLeaderboard />
       </section>
 
-      {/* ── Fixed overlays ─────────────────────────────────────────────────── */}
-
-      {/* D-pad: only useful in Section 2 (3D scene panning) */}
-      <DPadControls pressedDirection={pressedDirection} />
-
-      {/* Back button pill */}
+      {/* ── Back button ────────────────────────────────────────────────────── */}
       <button
         onClick={() => router.push("/dashboard")}
         style={{
@@ -175,16 +156,7 @@ export default function HallOfFamePage() {
           e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
         }}
       >
-        <svg
-          width="15"
-          height="15"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="15 18 9 12 15 6" />
         </svg>
         Back

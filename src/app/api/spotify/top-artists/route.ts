@@ -13,6 +13,9 @@ interface SpotifyArtist {
     id: string;
     name: string;
     images: { url: string }[];
+    genres: string[];
+    followers: { total: number };
+    popularity: number;
 }
 
 export interface ArtistData {
@@ -20,6 +23,9 @@ export interface ArtistData {
     artistName: string;
     artistImageUrl: string;
     rank: number;
+    genres: string[];
+    followers: number;
+    popularity: number;
 }
 
 export async function GET() {
@@ -35,7 +41,7 @@ export async function GET() {
     }
 
     const res = await fetch(
-        "https://api.spotify.com/v1/me/top/artists?time_range=short_term&limit=5",
+        "https://api.spotify.com/v1/me/top/artists?time_range=short_term&limit=10",
         { headers: { Authorization: `Bearer ${session.accessToken}` } }
     );
 
@@ -55,6 +61,9 @@ export async function GET() {
             artistName: artist.name,
             artistImageUrl: artist.images[0]?.url ?? "",
             rank: index + 1,
+            genres: artist.genres?.slice(0, 2) ?? [],
+            followers: artist.followers?.total ?? 0,
+            popularity: artist.popularity ?? 0,
         })
     );
 
