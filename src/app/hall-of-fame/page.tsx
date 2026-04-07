@@ -1,37 +1,147 @@
 // Hall of Fame — /hall-of-fame
 //
-// Layer order (z-index):
-//   0 — GLSL shader background   (ShaderBackground, position:fixed)
-//   1 — 3D scene                 (HallOfFameScene, transparent R3F Canvas, position:fixed)
-//  10 — D-pad navigation         (DPadControls, position:fixed, bottom-right)
-//  50 — Back button pill         (position:fixed, bottom-left)
+// Layout (two scroll sections):
+//   Section 1 (sticky, 200vh scroll space):
+//     CircularGallery — top albums carousel (scroll to rotate)
+//   Section 2 (100vh):
+//     HallOfFameScene — 3D artist plaques + vinyl crates
+//
+// Fixed overlays (position:fixed, always on top):
+//   z=20 — D-pad navigation (bottom-right)
+//   z=50 — Back button pill (bottom-left)
 
 "use client";
 
-import { useRef } from "react";
+import { useRef, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-// import { ShaderBackground } from "@/components/ShaderBackground";
 import { HallOfFameScene } from "@/components/HallOfFameScene";
 import { DPadControls } from "@/components/DPadControls";
+import { CircularGallery, type GalleryItem } from "@/components/ui/circular-gallery";
 
 type Direction = "up" | "down" | "left" | "right" | "reset";
 
 export default function HallOfFamePage() {
   const router = useRouter();
   const pressedDirection = useRef<Direction | null>(null);
+  const [albums, setAlbums] = useState<GalleryItem[]>([]);
+  const [galleryLoading, setGalleryLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/spotify/top-albums")
+      .then((r) => {
+        if (!r.ok) throw new Error(`top-albums ${r.status}`);
+        return r.json();
+      })
+      .then((data) => setAlbums(data.albums ?? []))
+      .catch((err) => console.error("[HallOfFamePage] top-albums fetch error:", err))
+      .finally(() => setGalleryLoading(false));
+  }, []);
 
   return (
-    <>
-      {/* Layer 0 — animated GLSL background (commented out — wall texture used instead) */}
-      {/* <ShaderBackground /> */}
+    <div style={{ position: "relative" }}>
 
-      {/* Layer 1 — 3D plaque wall + vinyl crates, transparent canvas */}
-      <HallOfFameScene pressedDirection={pressedDirection} />
+      {/* ── Section 1: Circular Album Gallery ─────────────────────────────────
+          200vh of scrollable space with a sticky 100vh viewport.
+          Scrolling this section rotates the carousel.
+      ───────────────────────────────────────────────────────────────────── */}
+      <section style={{ height: "200vh" }}>
+        <div
+          style={{
+            position: "sticky",
+            top: 0,
+            height: "100vh",
+            overflow: "hidden",
+            background: "#0a0a0f",
+          }}
+        >
+          {/* Title overlay */}
+          <div
+            style={{
+              position: "absolute",
+              top: "8%",
+              left: 0,
+              right: 0,
+              textAlign: "center",
+              zIndex: 10,
+              pointerEvents: "none",
+            }}
+          >
+            <h1
+              style={{
+                fontFamily: "Inter, sans-serif",
+                fontSize: "clamp(28px, 4vw, 48px)",
+                fontWeight: 700,
+                color: "rgba(255,255,255,0.95)",
+                letterSpacing: "-0.02em",
+                margin: 0,
+              }}
+            >
+              Hall of Fame
+            </h1>
+            <p
+              style={{
+                fontFamily: "Inter, sans-serif",
+                fontSize: "14px",
+                color: "rgba(255,255,255,0.45)",
+                marginTop: "6px",
+              }}
+            >
+              {galleryLoading ? "Loading your top albums…" : "Your all-time top albums · Scroll to rotate"}
+            </p>
+          </div>
 
-      {/* Layer 10 — D-pad for camera pan (pan down to reveal crate row) */}
+          {/* Circular Gallery */}
+          {!galleryLoading && albums.length > 0 && (
+            <CircularGallery
+              items={albums}
+              radius={500}
+              autoRotateSpeed={0.015}
+              style={{ position: "absolute", inset: 0 }}
+            />
+          )}
+
+          {/* Scroll hint arrow at bottom */}
+          <div
+            style={{
+              position: "absolute",
+              bottom: "5%",
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 10,
+              pointerEvents: "none",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "6px",
+              color: "rgba(255,255,255,0.35)",
+              fontFamily: "Inter, sans-serif",
+              fontSize: "12px",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            <span>Scroll</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Section 2: 3D Hall of Fame Scene ──────────────────────────────────
+          Artist plaques + vinyl crates in a Three.js canvas.
+          HallOfFameScene now uses position:absolute within its own wrapper.
+      ───────────────────────────────────────────────────────────────────── */}
+      <section style={{ position: "relative", height: "100vh" }}>
+        <HallOfFameScene pressedDirection={pressedDirection} />
+      </section>
+
+      {/* ── Fixed overlays ─────────────────────────────────────────────────── */}
+
+      {/* D-pad: only useful in Section 2 (3D scene panning) */}
       <DPadControls pressedDirection={pressedDirection} />
 
-      {/* Layer 50 — back button pill, bottom-left */}
+      {/* Back button pill */}
       <button
         onClick={() => router.push("/dashboard")}
         style={{
@@ -79,6 +189,6 @@ export default function HallOfFamePage() {
         </svg>
         Back
       </button>
-    </>
+    </div>
   );
 }

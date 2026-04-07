@@ -147,10 +147,10 @@ export function HallOfFameScene({ pressedDirection }: HallOfFameSceneProps) {
   const crateData = useMemo(() => buildCrates(tracks), [tracks]);
 
   return (
-    <>
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <Canvas
         style={{
-          position: "fixed",
+          position: "absolute",
           inset: 0,
           zIndex: 1,
           background: "transparent",
@@ -248,7 +248,7 @@ export function HallOfFameScene({ pressedDirection }: HallOfFameSceneProps) {
       {loading && (
         <div
           style={{
-            position: "fixed",
+            position: "absolute",
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
@@ -265,6 +265,6 @@ export function HallOfFameScene({ pressedDirection }: HallOfFameSceneProps) {
           Loading Hall of Fame...
         </div>
       )}
-    </>
+    </div>
   );
 }

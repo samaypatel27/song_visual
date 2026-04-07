@@ -244,9 +244,9 @@ NEXTAUTH_URL=http://localhost:3000
 ## Last Updated
 
 <!-- AUTO-UPDATED BY PRE-COMMIT HOOK -->
-- **Date:** 2026-04-04
-- **Branch:** main
-- **Last commit:** 45d990b — Updated lazy loading, improving loading times
+- **Date:** 2026-04-07
+- **Branch:** hall-of-fame
+- **Last commit:** f8c851b — creating mp3 player logic for most played in x time. However, if we switch to apple music we cant use the logic
 
 
 ---
@@ -255,9 +255,9 @@ NEXTAUTH_URL=http://localhost:3000
 
 <!-- AUTO-UPDATED BY PRE-COMMIT HOOK -->
 ```
-45d990b Updated lazy loading, improving loading times
-d2c7d74 Merge pull request #10 from samaypatel27/loading-merge
-8febb8c Fixed panning
-6d555cb Merge pull request #9 from samaypatel27/loading-merge
-ae94cc1 Merge branch 'loading-skeleton' into loading-merge
+f8c851b creating mp3 player logic for most played in x time. However, if we switch to apple music we cant use the logic
+31e2535 minor
+b27751e minor adjustments
+ca951df created backend api and page for most played songs. Added bedroom for playlist vinyl records page
+a102f3d Merge pull request #11 from samaypatel27/hall-of-fame
 ```
