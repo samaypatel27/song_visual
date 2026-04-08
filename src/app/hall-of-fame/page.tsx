@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CircularGallery, type GalleryItem } from "@/components/ui/circular-gallery";
 import { ArtistLeaderboard } from "@/components/ArtistLeaderboard";
+import { MusicStats } from "@/components/MusicStats";
 
 export default function HallOfFamePage() {
   const router = useRouter();
@@ -120,6 +121,11 @@ export default function HallOfFamePage() {
       {/* ── Section 2: Artist Leaderboard ───────────────────────────────────── */}
       <section style={{ position: "relative", height: "100vh", background: "#0a0a0f" }}>
         <ArtistLeaderboard />
+      </section>
+
+      {/* ── Section 3: Listening Stats ──────────────────────────────────────── */}
+      <section style={{ position: "relative", background: "#0a0a0f" }}>
+        <MusicStats />
       </section>
 
       {/* ── Back button ────────────────────────────────────────────────────── */}

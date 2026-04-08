@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(./node_modules/.bin/tailwindcss init:*)"
+      "Bash(./node_modules/.bin/tailwindcss init:*)",
+      "WebFetch(domain:developer.spotify.com)"
     ]
   }
 }
