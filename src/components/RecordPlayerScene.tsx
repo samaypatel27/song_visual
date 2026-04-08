@@ -1,10 +1,53 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useMemo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, RoundedBox } from "@react-three/drei";
 import * as THREE from "three";
 import { VinylRecord } from "@/components/VinylRecord";
+
+// ── Walnut wood texture — generated once at runtime ───────────────────────
+function createWalnutTexture(): THREE.CanvasTexture {
+    const W = 512, H = 256;
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d")!;
+
+    // Warm honey-brown base
+    ctx.fillStyle = "#8B5E3C";
+    ctx.fillRect(0, 0, W, H);
+
+    // 50 sinusoidal horizontal grain lines — deterministic via index
+    const lineCount = 50;
+    for (let i = 0; i < lineCount; i++) {
+        const y0 = (i / lineCount) * H;
+        const isDark = (i % 3) !== 2;
+        ctx.strokeStyle = isDark ? "#6B4423" : "#A0722A";
+        ctx.lineWidth   = 0.8 + (i % 4) * 0.4;
+        ctx.globalAlpha = 0.35 + (i % 5) * 0.09;
+
+        const freq  = 1.5 + (i % 7) * 0.3;                 // 1.5–3.3 full periods
+        const amp   = 1.5 + (i % 5) * 0.7;                 // 1.5–4.5 px amplitude
+        const phase = (i * 0.618) % (Math.PI * 2);          // golden ratio phase offset
+
+        ctx.beginPath();
+        for (let x = 0; x <= W; x += 2) {
+            const y = y0 + Math.sin((x / W) * Math.PI * freq * 2 + phase) * amp;
+            if (x === 0) ctx.moveTo(x, y);
+            else         ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+    ctx.globalAlpha = 1.0;
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(2, 1);
+    tex.colorSpace   = THREE.SRGBColorSpace;
+    tex.needsUpdate  = true;
+    return tex;
+}
 
 // ── Knurling ring Y positions ──────────────────────────────────────────────
 const KNURL_COUNT = 8;
@@ -98,37 +141,37 @@ function ControlKnob() {
     );
 }
 
-// ── Sub-component: tonearm assembly (pivot-relative coords) ───────────────
+// ── Sub-component: tonearm assembly — dark gunmetal ───────────────────────
 function TonearmAssembly({ groupRef }: { groupRef: React.RefObject<THREE.Group | null> }) {
     return (
         // Pivot group at world [3.3, 0, -1.8]; initial rotation is rest angle (0.45 rad)
         <group ref={groupRef} position={[3.3, 0, -1.8]} rotation={[0, 0.45, 0]}>
-            {/* Pivot base — relative to pivot */}
+            {/* Pivot base — gunmetal */}
             <mesh position={[0, 0.35, 0]} castShadow>
                 <cylinderGeometry args={[0.22, 0.28, 0.5, 32]} />
-                <meshStandardMaterial color="#c0c0c0" metalness={0.9} roughness={0.1} />
+                <meshStandardMaterial color="#2a2a2a" metalness={0.8} roughness={0.3} />
             </mesh>
-            {/* Pivot top cap */}
+            {/* Pivot top cap — gunmetal */}
             <mesh position={[0, 0.62, 0]}>
                 <cylinderGeometry args={[0.12, 0.12, 0.06, 16]} />
-                <meshStandardMaterial color="#e0e0e0" metalness={0.95} roughness={0.05} />
+                <meshStandardMaterial color="#2a2a2a" metalness={0.8} roughness={0.3} />
             </mesh>
-            {/* Arm tube — ARM_GEO uses pivot-relative coords */}
+            {/* Arm tube — dark gunmetal */}
             <mesh castShadow>
                 <primitive object={ARM_GEO} />
-                <meshStandardMaterial color="#d4d4d4" metalness={0.95} roughness={0.05} />
+                <meshStandardMaterial color="#2a2a2a" metalness={0.8} roughness={0.3} />
             </mesh>
-            {/* Counterweight — relative to pivot */}
+            {/* Counterweight — polished dark cylinder */}
             <mesh position={[0.2, 0.65, -0.7]}>
                 <cylinderGeometry args={[0.13, 0.13, 0.4, 16]} />
-                <meshStandardMaterial color="#888888" metalness={0.8} roughness={0.2} />
+                <meshStandardMaterial color="#1e1e1e" metalness={0.9} roughness={0.15} />
             </mesh>
-            {/* Headshell — relative to pivot */}
+            {/* Headshell — slightly lighter gunmetal */}
             <mesh position={[-1.2, 0.62, 2.38]} rotation={[0, Math.PI * 0.08, 0]} castShadow>
                 <boxGeometry args={[0.32, 0.1, 0.18]} />
-                <meshStandardMaterial color="#2a2a2a" roughness={0.4} metalness={0.3} />
+                <meshStandardMaterial color="#3a3a3a" roughness={0.3} metalness={0.5} />
             </mesh>
-            {/* Stylus cantilever — relative to pivot */}
+            {/* Stylus cantilever */}
             <mesh position={[-1.3, 0.57, 2.42]}>
                 <cylinderGeometry args={[0.012, 0.008, 0.1, 8]} />
                 <meshStandardMaterial color="#1a1a1a" roughness={0.3} />
@@ -153,6 +196,35 @@ function IndicatorLight() {
     );
 }
 
+// ── Sub-component: decorative control panel ───────────────────────────────
+function ControlPanel() {
+    // Front-right of plinth surface (plinth top at y=0.3)
+    return (
+        <group position={[2.4, 0.33, 2.65]}>
+            {/* Panel body */}
+            <mesh>
+                <boxGeometry args={[1.6, 0.06, 0.75]} />
+                <meshStandardMaterial color="#1a1a1a" roughness={0.6} metalness={0.1} />
+            </mesh>
+            {/* Button 1 */}
+            <mesh position={[-0.5, 0.055, 0]}>
+                <cylinderGeometry args={[0.07, 0.07, 0.05, 12]} />
+                <meshStandardMaterial color="#3a3a3a" roughness={0.5} metalness={0.4} />
+            </mesh>
+            {/* Button 2 */}
+            <mesh position={[0, 0.055, 0]}>
+                <cylinderGeometry args={[0.07, 0.07, 0.05, 12]} />
+                <meshStandardMaterial color="#3a3a3a" roughness={0.5} metalness={0.4} />
+            </mesh>
+            {/* Button 3 */}
+            <mesh position={[0.5, 0.055, 0]}>
+                <cylinderGeometry args={[0.07, 0.07, 0.05, 12]} />
+                <meshStandardMaterial color="#444444" roughness={0.5} metalness={0.4} />
+            </mesh>
+        </group>
+    );
+}
+
 // ── Inner scene props ─────────────────────────────────────────────────────
 interface RecordPlayerSceneInnerProps {
     albumCoverUrl: string;
@@ -161,6 +233,9 @@ interface RecordPlayerSceneInnerProps {
 
 // ── Inner scene (needs to be inside Canvas) ───────────────────────────────
 function RecordPlayerSceneInner({ albumCoverUrl, onPhase3 }: RecordPlayerSceneInnerProps) {
+
+    // ── Walnut texture (created once) ─────────────────────────────────────
+    const walnutTexture = useMemo(() => createWalnutTexture(), []);
 
     // ── Animation refs ────────────────────────────────────────────────────
     const dustCoverPivotRef  = useRef<THREE.Group>(null);
@@ -247,14 +322,21 @@ function RecordPlayerSceneInner({ albumCoverUrl, onPhase3 }: RecordPlayerSceneIn
 
     return (
         <>
-            {/* Lighting */}
+            {/* ── Lighting ─────────────────────────────────────────────────────── */}
             <ambientLight intensity={0.35} />
+            {/* Existing cool-side fill */}
             <directionalLight
                 position={[-4, 8, 4]}
                 intensity={1.6}
                 castShadow
                 shadow-mapSize-width={1024}
                 shadow-mapSize-height={1024}
+            />
+            {/* Warm directional — highlights walnut grain and gunmetal */}
+            <directionalLight
+                position={[3, 5, 3]}
+                intensity={1.6}
+                color="#fff5e0"
             />
             <pointLight position={[-0.5, 2, 0]} intensity={0.8} color="#fff8e8" />
             <pointLight position={[3.5, 1.5, 1]} intensity={0.4} color="#aaddff" />
@@ -267,17 +349,26 @@ function RecordPlayerSceneInner({ albumCoverUrl, onPhase3 }: RecordPlayerSceneIn
                 <meshStandardMaterial color="#000000" transparent opacity={0.15} roughness={1} metalness={0} />
             </mesh>
 
-            {/* Plinth — matte off-white ceramic */}
+            {/* ── Plinth — walnut wood ──────────────────────────────────────────── */}
             <RoundedBox args={[8, 0.6, 7]} radius={0.25} position={[0, 0, 0]} receiveShadow castShadow>
-                <meshStandardMaterial color="#f0ede8" roughness={0.92} metalness={0.0} />
+                <meshStandardMaterial
+                    map={walnutTexture}
+                    roughness={0.82}
+                    metalness={0.0}
+                />
             </RoundedBox>
 
-            {/* Platter + Vinyl — share one group for Phase 3 rotation */}
+            {/* ── Platter + Vinyl — share one group for Phase 3 rotation ────────── */}
             <group ref={platterGroupRef} position={[-0.4, 0, 0]}>
                 {/* Platter disc — brushed aluminum */}
                 <mesh position={[0, 0.39, 0]} receiveShadow>
                     <cylinderGeometry args={[3.1, 3.1, 0.18, 64]} />
                     <meshStandardMaterial color="#b8b8b8" metalness={0.85} roughness={0.25} />
+                </mesh>
+                {/* Rubber platter mat — matte black, sits on top of platter disc */}
+                <mesh position={[0, 0.49, 0]}>
+                    <cylinderGeometry args={[2.9, 2.9, 0.04, 64]} />
+                    <meshStandardMaterial color="#111111" roughness={0.95} metalness={0.0} />
                 </mesh>
                 {/* Vinyl disc — rotated flat; VinylRecord spins on Z (= world Y when platter is flat) */}
                 <group position={[0, 0.5, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -290,38 +381,59 @@ function RecordPlayerSceneInner({ albumCoverUrl, onPhase3 }: RecordPlayerSceneIn
                 </group>
             </group>
 
-            {/* Tonearm */}
-            <TonearmAssembly groupRef={tonearmGroupRef} />
-
-            {/* Tonearm rest peg — stationary chrome pillar on plinth */}
-            <mesh position={[1.1, 0.5, 0.95]}>
-                <cylinderGeometry args={[0.04, 0.04, 0.18, 12]} />
-                <meshStandardMaterial color="#e0e0e0" metalness={0.95} roughness={0.05} />
+            {/* ── Tonearm pivot mount block — static housing on plinth ─────────── */}
+            <mesh position={[3.3, 0.37, -1.8]}>
+                <boxGeometry args={[0.8, 0.14, 0.8]} />
+                <meshStandardMaterial color="#2a2a2a" roughness={0.3} metalness={0.8} />
             </mesh>
 
-            {/* Dust cover — pivot at rear-bottom edge of plinth */}
-            <group ref={dustCoverPivotRef} position={[0, 0.3, -3.6]}>
-                {/* Cover mesh positioned relative to pivot so it swings open backward on X */}
-                <mesh position={[0, 1.4, 3.6]} castShadow>
-                    <boxGeometry args={[8.4, 2.8, 7.2]} />
-                    <meshPhysicalMaterial
-                        color="#1a1a2a"
-                        transmission={0.75}
-                        roughness={0.05}
-                        thickness={0.8}
-                        opacity={1.0}
-                    />
+            {/* ── Tonearm (animates, so ref-driven) ────────────────────────────── */}
+            <TonearmAssembly groupRef={tonearmGroupRef} />
+
+            {/* Tonearm rest peg — gunmetal to match arm */}
+            <mesh position={[1.1, 0.5, 0.95]}>
+                <cylinderGeometry args={[0.04, 0.04, 0.18, 12]} />
+                <meshStandardMaterial color="#2a2a2a" metalness={0.8} roughness={0.3} />
+            </mesh>
+
+            {/* ── Dust cover — walnut wood lid, 5 thin panels, open at bottom ─── */}
+            {/*   Pivot at plinth rear-top edge: Z = −3.5 (depth/2), Y = 0.3 (top) */}
+            {/*   Wall thickness T = 0.15. Outer shell: 8.4 W × 2.8 H × 7.2 D     */}
+            {/*   Back wall outer face sits at pivot-local Z = 0 → world Z = −3.5,  */}
+            {/*   flush with plinth rear edge. Animation ref/axis untouched.         */}
+            <group ref={dustCoverPivotRef} position={[0, 0.3, -3.5]}>
+                {/* Top panel (roof) */}
+                <mesh position={[0, 2.725, 3.6]} castShadow receiveShadow>
+                    <boxGeometry args={[8.4, 0.15, 7.2]} />
+                    <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
+                </mesh>
+                {/* Left wall */}
+                <mesh position={[-4.125, 1.4, 3.6]} castShadow receiveShadow>
+                    <boxGeometry args={[0.15, 2.8, 7.2]} />
+                    <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
+                </mesh>
+                {/* Right wall */}
+                <mesh position={[4.125, 1.4, 3.6]} castShadow receiveShadow>
+                    <boxGeometry args={[0.15, 2.8, 7.2]} />
+                    <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
+                </mesh>
+                {/* Back wall — outer face at pivot-local Z=0, flush with plinth rear */}
+                <mesh position={[0, 1.4, 0.075]} castShadow receiveShadow>
+                    <boxGeometry args={[8.4, 2.8, 0.15]} />
+                    <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
+                </mesh>
+                {/* Front wall */}
+                <mesh position={[0, 1.4, 7.125]} castShadow receiveShadow>
+                    <boxGeometry args={[8.4, 2.8, 0.15]} />
+                    <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
                 </mesh>
             </group>
 
-            {/* VU meter */}
+            {/* ── Decorative elements ──────────────────────────────────────────── */}
             <VUMeter />
-
-            {/* Indicator light */}
             <IndicatorLight />
-
-            {/* Control knob */}
             <ControlKnob />
+            <ControlPanel />
 
             {/* Camera controls */}
             <OrbitControls
