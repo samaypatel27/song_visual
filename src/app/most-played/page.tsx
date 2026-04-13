@@ -147,18 +147,40 @@ export default function MostPlayedPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    useEffect(() => {
+        const fetchRecentlyPlayed = async () => {
+            try {
+                const res = await fetch("/api/spotify/recently-played");
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                console.log("[most-played] 5 recently played tracks:");
+                data.tracks.forEach((t: { trackName: string; artistName: string; albumName: string; albumCoverUrl: string; playedAt: string }, i: number) => {
+                    console.log(`  [${i + 1}] "${t.trackName}" — ${t.artistName}`);
+                    console.log(`       album: ${t.albumName}`);
+                    console.log(`       cover: ${t.albumCoverUrl}`);
+                    console.log(`       played at: ${t.playedAt}`);
+                });
+            } catch (err) {
+                console.error("[most-played] recently-played fetch failed:", err);
+            }
+        };
+        fetchRecentlyPlayed();
+    }, []);
+
     return (
         <div style={{
             height: "100vh",
             overflow: "hidden",
             display: "flex",
             flexDirection: "row",
-            background: "radial-gradient(ellipse at center, #ede9e1 0%, #d8d4cc 100%)",
-            backgroundColor: "#e8e4dc",
+            backgroundImage: "url('/most-played-background.png')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
         }}>
             {/* Left panel — iPod */}
             <div style={{
-                width: selectedTrack ? "460px" : "100%",
+                width: "460px",
                 height: "100vh",
                 flexShrink: 0,
                 display: "flex",
@@ -528,24 +550,22 @@ export default function MostPlayedPage() {
                 </div>
             )}
 
-            {/* Right panel — record player */}
-            {selectedTrack && (
-                <div style={{
-                    flex: 1,
-                    height: "100vh",
-                    position: "sticky",
-                    top: 0,
-                }}>
-                    <RecordPlayerScene
-                        albumCoverUrl={selectedTrack.albumCoverUrl}
-                        songName={selectedTrack.songName}
-                        artistName={selectedTrack.artistName}
-                        onPhase3={() => {
-                            if (pendingTrackRef.current) handlePlay(pendingTrackRef.current);
-                        }}
-                    />
-                </div>
-            )}
+            {/* Right panel — record player (always visible; box stays closed until a track is selected) */}
+            <div style={{
+                flex: 1,
+                height: "100vh",
+                position: "sticky",
+                top: 0,
+            }}>
+                <RecordPlayerScene
+                    albumCoverUrl={selectedTrack?.albumCoverUrl ?? ""}
+                    songName={selectedTrack?.songName ?? ""}
+                    artistName={selectedTrack?.artistName ?? ""}
+                    onPhase3={() => {
+                        if (pendingTrackRef.current) handlePlay(pendingTrackRef.current);
+                    }}
+                />
+            </div>
         </div>
     );
 }

@@ -24,18 +24,18 @@ function createWalnutTexture(): THREE.CanvasTexture {
         const y0 = (i / lineCount) * H;
         const isDark = (i % 3) !== 2;
         ctx.strokeStyle = isDark ? "#6B4423" : "#A0722A";
-        ctx.lineWidth   = 0.8 + (i % 4) * 0.4;
+        ctx.lineWidth = 0.8 + (i % 4) * 0.4;
         ctx.globalAlpha = 0.35 + (i % 5) * 0.09;
 
-        const freq  = 1.5 + (i % 7) * 0.3;                 // 1.5–3.3 full periods
-        const amp   = 1.5 + (i % 5) * 0.7;                 // 1.5–4.5 px amplitude
+        const freq = 1.5 + (i % 7) * 0.3;                 // 1.5–3.3 full periods
+        const amp = 1.5 + (i % 5) * 0.7;                 // 1.5–4.5 px amplitude
         const phase = (i * 0.618) % (Math.PI * 2);          // golden ratio phase offset
 
         ctx.beginPath();
         for (let x = 0; x <= W; x += 2) {
             const y = y0 + Math.sin((x / W) * Math.PI * freq * 2 + phase) * amp;
             if (x === 0) ctx.moveTo(x, y);
-            else         ctx.lineTo(x, y);
+            else ctx.lineTo(x, y);
         }
         ctx.stroke();
     }
@@ -44,8 +44,8 @@ function createWalnutTexture(): THREE.CanvasTexture {
     const tex = new THREE.CanvasTexture(canvas);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(2, 1);
-    tex.colorSpace   = THREE.SRGBColorSpace;
-    tex.needsUpdate  = true;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
     return tex;
 }
 
@@ -57,10 +57,10 @@ const KNURL_YS = Array.from({ length: KNURL_COUNT }, (_, i) =>
 
 // ── Tonearm curve — coordinates RELATIVE to pivot at world [3.3, 0, -1.8] ─
 const ARM_CURVE = new THREE.CatmullRomCurve3([
-    new THREE.Vector3( 0.0, 0.65,  0.0),
-    new THREE.Vector3(-0.2, 0.65,  0.8),
-    new THREE.Vector3(-0.5, 0.65,  1.6),
-    new THREE.Vector3(-1.0, 0.65,  2.3),
+    new THREE.Vector3(0.0, 0.65, 0.0),
+    new THREE.Vector3(-0.2, 0.65, 0.8),
+    new THREE.Vector3(-0.5, 0.65, 1.6),
+    new THREE.Vector3(-1.0, 0.65, 2.3),
 ]);
 const ARM_GEO = new THREE.TubeGeometry(ARM_CURVE, 40, 0.04, 8, false);
 
@@ -238,9 +238,9 @@ function RecordPlayerSceneInner({ albumCoverUrl, onPhase3 }: RecordPlayerSceneIn
     const walnutTexture = useMemo(() => createWalnutTexture(), []);
 
     // ── Animation refs ────────────────────────────────────────────────────
-    const dustCoverPivotRef  = useRef<THREE.Group>(null);
-    const tonearmGroupRef    = useRef<THREE.Group>(null);
-    const platterGroupRef    = useRef<THREE.Group>(null);
+    const dustCoverPivotRef = useRef<THREE.Group>(null);
+    const tonearmGroupRef = useRef<THREE.Group>(null);
+    const platterGroupRef = useRef<THREE.Group>(null);
     const vinylSpinEnabledRef = useRef<boolean>(true);
     const animRef = useRef({
         active: false,
@@ -269,7 +269,7 @@ function RecordPlayerSceneInner({ albumCoverUrl, onPhase3 }: RecordPlayerSceneIn
     }, [albumCoverUrl]);
 
     // ── Animation driver ──────────────────────────────────────────────────
-    useFrame(({}, delta) => {
+    useFrame(({ }, delta) => {
         const anim = animRef.current;
         if (!anim.active) return;
 
@@ -279,7 +279,7 @@ function RecordPlayerSceneInner({ albumCoverUrl, onPhase3 }: RecordPlayerSceneIn
 
         if (anim.phase === 1) {
             // Phase 1: dust cover opens (1.5 s, easeOut cubic)
-            const p  = Math.min(anim.elapsed / 1.5, 1);
+            const p = Math.min(anim.elapsed / 1.5, 1);
             const ep = 1 - Math.pow(1 - p, 3);
             if (dustCoverPivotRef.current) {
                 dustCoverPivotRef.current.rotation.x = ep * -1.15;
@@ -294,7 +294,7 @@ function RecordPlayerSceneInner({ albumCoverUrl, onPhase3 }: RecordPlayerSceneIn
                     tonearmGroupRef.current.position.y = (e / 0.5) * 0.15;
                 } else if (e < 1.5) {
                     // Step B: swing from rest (0.45 rad) to play (0 rad), easeInOut quad
-                    const p  = (e - 0.5) / 1.0;
+                    const p = (e - 0.5) / 1.0;
                     const ep = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
                     tonearmGroupRef.current.rotation.y = 0.45 * (1 - ep);
                 } else if (e < 2.0) {
@@ -437,12 +437,12 @@ function RecordPlayerSceneInner({ albumCoverUrl, onPhase3 }: RecordPlayerSceneIn
 
             {/* Camera controls */}
             <OrbitControls
+                enableRotate={false}
                 enablePan={false}
-                minPolarAngle={Math.PI / 6}
-                maxPolarAngle={Math.PI / 2.2}
-                minDistance={6}
-                maxDistance={18}
-                target={[0, 0.5, 0]}
+                enableZoom={false}
+                minDistance={10}
+                maxDistance={32}
+                target={[0, 1, 0]}
             />
         </>
     );
@@ -462,10 +462,10 @@ export function RecordPlayerScene({ albumCoverUrl, songName, artistName, onPhase
             width: "100%",
             height: "100%",
             position: "relative",
-            background: "radial-gradient(ellipse at center, #ede9e1 0%, #d8d4cc 100%)",
+            background: "transparent",
         }}>
             <Canvas
-                camera={{ position: [3, 6, 9], fov: 45 }}
+                camera={{ position: [15, 6, 17], fov: 44 }}
                 shadows
                 style={{ width: "100%", height: "100%" }}
                 gl={{ antialias: true, alpha: true }}
@@ -484,7 +484,7 @@ export function RecordPlayerScene({ albumCoverUrl, songName, artistName, onPhase
                 <div style={{
                     fontSize: "15px",
                     fontWeight: 700,
-                    color: "#1a1a1a",
+                    color: "#ffffff",
                     fontFamily: "'Helvetica Neue', sans-serif",
                     letterSpacing: "0.03em",
                     whiteSpace: "nowrap",
@@ -492,7 +492,7 @@ export function RecordPlayerScene({ albumCoverUrl, songName, artistName, onPhase
                 <div style={{
                     fontSize: "13px",
                     fontWeight: 400,
-                    color: "#555555",
+                    color: "#ffffff",
                     fontFamily: "'Helvetica Neue', sans-serif",
                     marginTop: "3px",
                     whiteSpace: "nowrap",
