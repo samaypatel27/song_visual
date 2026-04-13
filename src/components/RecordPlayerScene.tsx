@@ -349,91 +349,97 @@ function RecordPlayerSceneInner({ albumCoverUrl, onPhase3 }: RecordPlayerSceneIn
                 <meshStandardMaterial color="#000000" transparent opacity={0.15} roughness={1} metalness={0} />
             </mesh>
 
-            {/* ── Plinth — walnut wood ──────────────────────────────────────────── */}
-            <RoundedBox args={[8, 0.6, 7]} radius={0.25} position={[0, 0, 0]} receiveShadow castShadow>
-                <meshStandardMaterial
-                    map={walnutTexture}
-                    roughness={0.82}
-                    metalness={0.0}
-                />
-            </RoundedBox>
+            {/* ── Record player assembly — adjust position={[x, y, z]} to reposition ── */}
+            {/*   x: left/right  y: up/down  z: forward(+)/back(-)                      */}
+            <group position={[8, 0, 5]} scale={0.5}>
 
-            {/* ── Platter + Vinyl — share one group for Phase 3 rotation ────────── */}
-            <group ref={platterGroupRef} position={[-0.4, 0, 0]}>
-                {/* Platter disc — brushed aluminum */}
-                <mesh position={[0, 0.39, 0]} receiveShadow>
-                    <cylinderGeometry args={[3.1, 3.1, 0.18, 64]} />
-                    <meshStandardMaterial color="#b8b8b8" metalness={0.85} roughness={0.25} />
-                </mesh>
-                {/* Rubber platter mat — matte black, sits on top of platter disc */}
-                <mesh position={[0, 0.49, 0]}>
-                    <cylinderGeometry args={[2.9, 2.9, 0.04, 64]} />
-                    <meshStandardMaterial color="#111111" roughness={0.95} metalness={0.0} />
-                </mesh>
-                {/* Vinyl disc — rotated flat; VinylRecord spins on Z (= world Y when platter is flat) */}
-                <group position={[0, 0.5, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-                    <VinylRecord
-                        albumCoverUrl={albumCoverUrl}
-                        position={[0, 0, 0]}
-                        radius={2.85}
-                        spinEnabledRef={vinylSpinEnabledRef}
+                {/* ── Plinth — walnut wood ──────────────────────────────────────────── */}
+                <RoundedBox args={[8, 0.6, 7]} radius={0.25} position={[0, 0, 0]} receiveShadow castShadow>
+                    <meshStandardMaterial
+                        map={walnutTexture}
+                        roughness={0.82}
+                        metalness={0.0}
                     />
+                </RoundedBox>
+
+                {/* ── Platter + Vinyl — share one group for Phase 3 rotation ────────── */}
+                <group ref={platterGroupRef} position={[-0.4, 0, 0]}>
+                    {/* Platter disc — brushed aluminum */}
+                    <mesh position={[0, 0.39, 0]} receiveShadow>
+                        <cylinderGeometry args={[3.1, 3.1, 0.18, 64]} />
+                        <meshStandardMaterial color="#b8b8b8" metalness={0.85} roughness={0.25} />
+                    </mesh>
+                    {/* Rubber platter mat — matte black, sits on top of platter disc */}
+                    <mesh position={[0, 0.49, 0]}>
+                        <cylinderGeometry args={[2.9, 2.9, 0.04, 64]} />
+                        <meshStandardMaterial color="#111111" roughness={0.95} metalness={0.0} />
+                    </mesh>
+                    {/* Vinyl disc — rotated flat; VinylRecord spins on Z (= world Y when platter is flat) */}
+                    <group position={[0, 0.5, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                        <VinylRecord
+                            albumCoverUrl={albumCoverUrl}
+                            position={[0, 0, 0]}
+                            radius={2.85}
+                            spinEnabledRef={vinylSpinEnabledRef}
+                        />
+                    </group>
                 </group>
-            </group>
 
-            {/* ── Tonearm pivot mount block — static housing on plinth ─────────── */}
-            <mesh position={[3.3, 0.37, -1.8]}>
-                <boxGeometry args={[0.8, 0.14, 0.8]} />
-                <meshStandardMaterial color="#2a2a2a" roughness={0.3} metalness={0.8} />
-            </mesh>
+                {/* ── Tonearm pivot mount block — static housing on plinth ─────────── */}
+                <mesh position={[3.3, 0.37, -1.8]}>
+                    <boxGeometry args={[0.8, 0.14, 0.8]} />
+                    <meshStandardMaterial color="#2a2a2a" roughness={0.3} metalness={0.8} />
+                </mesh>
 
-            {/* ── Tonearm (animates, so ref-driven) ────────────────────────────── */}
-            <TonearmAssembly groupRef={tonearmGroupRef} />
+                {/* ── Tonearm (animates, so ref-driven) ────────────────────────────── */}
+                <TonearmAssembly groupRef={tonearmGroupRef} />
 
-            {/* Tonearm rest peg — gunmetal to match arm */}
-            <mesh position={[1.1, 0.5, 0.95]}>
-                <cylinderGeometry args={[0.04, 0.04, 0.18, 12]} />
-                <meshStandardMaterial color="#2a2a2a" metalness={0.8} roughness={0.3} />
-            </mesh>
+                {/* Tonearm rest peg — gunmetal to match arm */}
+                <mesh position={[1.1, 0.5, 0.95]}>
+                    <cylinderGeometry args={[0.04, 0.04, 0.18, 12]} />
+                    <meshStandardMaterial color="#2a2a2a" metalness={0.8} roughness={0.3} />
+                </mesh>
 
-            {/* ── Dust cover — walnut wood lid, 5 thin panels, open at bottom ─── */}
-            {/*   Pivot at plinth rear-top edge: Z = −3.5 (depth/2), Y = 0.3 (top) */}
-            {/*   Wall thickness T = 0.15. Outer shell: 8.4 W × 2.8 H × 7.2 D     */}
-            {/*   Back wall outer face sits at pivot-local Z = 0 → world Z = −3.5,  */}
-            {/*   flush with plinth rear edge. Animation ref/axis untouched.         */}
-            <group ref={dustCoverPivotRef} position={[0, 0.3, -3.5]}>
-                {/* Top panel (roof) */}
-                <mesh position={[0, 2.725, 3.6]} castShadow receiveShadow>
-                    <boxGeometry args={[8.4, 0.15, 7.2]} />
-                    <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
-                </mesh>
-                {/* Left wall */}
-                <mesh position={[-4.125, 1.4, 3.6]} castShadow receiveShadow>
-                    <boxGeometry args={[0.15, 2.8, 7.2]} />
-                    <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
-                </mesh>
-                {/* Right wall */}
-                <mesh position={[4.125, 1.4, 3.6]} castShadow receiveShadow>
-                    <boxGeometry args={[0.15, 2.8, 7.2]} />
-                    <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
-                </mesh>
-                {/* Back wall — outer face at pivot-local Z=0, flush with plinth rear */}
-                <mesh position={[0, 1.4, 0.075]} castShadow receiveShadow>
-                    <boxGeometry args={[8.4, 2.8, 0.15]} />
-                    <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
-                </mesh>
-                {/* Front wall */}
-                <mesh position={[0, 1.4, 7.125]} castShadow receiveShadow>
-                    <boxGeometry args={[8.4, 2.8, 0.15]} />
-                    <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
-                </mesh>
-            </group>
+                {/* ── Dust cover — walnut wood lid, 5 thin panels, open at bottom ─── */}
+                {/*   Pivot at plinth rear-top edge: Z = −3.5 (depth/2), Y = 0.3 (top) */}
+                {/*   Wall thickness T = 0.15. Outer shell: 8.4 W × 2.8 H × 7.2 D     */}
+                {/*   Back wall outer face sits at pivot-local Z = 0 → world Z = −3.5,  */}
+                {/*   flush with plinth rear edge. Animation ref/axis untouched.         */}
+                <group ref={dustCoverPivotRef} position={[0, 0.3, -3.5]}>
+                    {/* Top panel (roof) */}
+                    <mesh position={[0, 2.725, 3.6]} castShadow receiveShadow>
+                        <boxGeometry args={[8.4, 0.15, 7.2]} />
+                        <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
+                    </mesh>
+                    {/* Left wall */}
+                    <mesh position={[-4.125, 1.4, 3.6]} castShadow receiveShadow>
+                        <boxGeometry args={[0.15, 2.8, 7.2]} />
+                        <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
+                    </mesh>
+                    {/* Right wall */}
+                    <mesh position={[4.125, 1.4, 3.6]} castShadow receiveShadow>
+                        <boxGeometry args={[0.15, 2.8, 7.2]} />
+                        <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
+                    </mesh>
+                    {/* Back wall — outer face at pivot-local Z=0, flush with plinth rear */}
+                    <mesh position={[0, 1.4, 0.075]} castShadow receiveShadow>
+                        <boxGeometry args={[8.4, 2.8, 0.15]} />
+                        <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
+                    </mesh>
+                    {/* Front wall */}
+                    <mesh position={[0, 1.4, 7.125]} castShadow receiveShadow>
+                        <boxGeometry args={[8.4, 2.8, 0.15]} />
+                        <meshStandardMaterial map={walnutTexture} roughness={0.82} metalness={0.0} />
+                    </mesh>
+                </group>
 
-            {/* ── Decorative elements ──────────────────────────────────────────── */}
-            <VUMeter />
-            <IndicatorLight />
-            <ControlKnob />
-            <ControlPanel />
+                {/* ── Decorative elements ──────────────────────────────────────────── */}
+                <VUMeter />
+                <IndicatorLight />
+                <ControlKnob />
+                <ControlPanel />
+
+            </group>{/* end record player assembly */}
 
             {/* Camera controls */}
             <OrbitControls
