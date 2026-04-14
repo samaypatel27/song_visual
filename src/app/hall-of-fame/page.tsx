@@ -119,7 +119,7 @@ export default function HallOfFamePage() {
       </section>
 
       {/* ── Section 2: Artist Leaderboard ───────────────────────────────────── */}
-      <section style={{ position: "relative", height: "100vh", background: "#0a0a0f" }}>
+      <section style={{ position: "relative", minHeight: "120vh", background: "#0a0a0f" }}>
         <ArtistLeaderboard />
       </section>
 
